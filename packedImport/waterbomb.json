@@ -1,0 +1,92 @@
+{
+    "origami": [
+        {
+            "type": "kl",
+            "tsp": [
+                0.0,
+                0.0
+            ],
+            "data": [
+                [
+                    8,
+                    1.5707
+                ],
+                [
+                    16,
+                    0
+                ],
+                [
+                    8,
+                    -1.5707
+                ]
+            ],
+            "add_width": false
+        }
+    ],
+    "util": {
+        "hole_axis": []
+    },
+    "setting": {
+        "unit_width": 30.0,
+        "copy_time": 1,
+        "entry_flag": 0,
+        "add_hole_mode": true,
+        "hole_size": 0.5,
+        "hole_resolution": 3,
+        "enable_connection": false,
+        "con_left_length": 10.0,
+        "con_right_length": 10.0,
+        "con_radius": 1.5,
+        "bias_val": 2.0
+    },
+    "strings": {
+        "type": [
+            [
+                "A",
+                "B",
+                "B",
+                "B",
+                "A"
+            ],
+            [
+                "A",
+                "B",
+                "B",
+                "B",
+                "A"
+            ]
+        ],
+        "id": [
+            [
+                0,
+                4,
+                2,
+                0,
+                37
+            ],
+            [
+                0,
+                5,
+                3,
+                1,
+                35
+            ]
+        ],
+        "reverse": [
+            [
+                1,
+                1,
+                -1,
+                -1,
+                1
+            ],
+            [
+                1,
+                1,
+                -1,
+                -1,
+                1
+            ]
+        ]
+    }
+}
