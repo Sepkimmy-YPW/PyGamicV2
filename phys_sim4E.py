@@ -836,6 +836,24 @@ class OrigamiSimulator:
         return tm.vec3([xx, y, z])
 
     @ti.func
+    def calculateKpNumWithUnitId(self, unit_kps):
+        kp_len = 0
+        for i in range(len(unit_kps)):
+            if unit_kps[i] != -1:
+                kp_len += 1
+        return kp_len
+
+    @ti.func
+    def getAxisForce(self, force_dir, i):
+        delta_length = self.constraint_length[i] - self.constraint_initial_length[i]
+        force = tm.vec3([.0, .0, .0])
+        if delta_length < self.max_stretch_length:
+            force = tm.normalize(force_dir) * self.string_params[0] * delta_length
+        else:
+            force = tm.normalize(force_dir) * self.string_params[0] * ((delta_length - 1 / 3) ** 3 + 19. / 27.)
+        return force
+
+    @ti.func
     def calculateNormalVectorWithUnitId(self, unit_kps):
         n = tm.vec3([0.0, 0.0, 0.0])
         kp_len = 0
@@ -1132,15 +1150,460 @@ class OrigamiSimulator:
             self.force[i] += self.record_force[i]
             self.record_force[i] = ti.Vector([0.0, 0.0, 0.0])
 
-        # Fourth we calculate viscousity
+        # Fourth
         for i in range(self.kp_num):
             point_v = self.get_velocity_with_index(i)
             for j in range(self.kp_num):
                 f = self.getViscousity(point_v, self.get_velocity_with_index(j), i, j)
-                self.force[i] += f
+                self.record_force[i] += f
 
         for i in range(self.kp_num):
-            self.total_energy[0] += 0.5 * self.masses[i] * self.v[i].norm() ** 2
+            force_value = self.record_force[i].norm()
+            if force_value > self.max_force[0]:
+                self.max_force[0] = force_value
+            self.force[i] += self.record_force[i]
+            self.record_force[i] = ti.Vector([0.0, 0.0, 0.0])
+
+        # Fifth we calculate total viscousity
+        for i in range(self.kp_num):
+            point_v = self.get_velocity_with_index(i)
+            self.force[i] += -.01 * self.viscousity * point_v
+
+        for i in range(self.kp_num):
+            self.total_energy[0] += 0.5 * self.masses[i] * self.v[i].norm() ** 2 - self.masses[i] * gravitational_acc[Z] * self.x[i][Z]
+
+        # print(self.total_energy[0])
+            
+        # Sixth TSA_SIM PART
+        
+        # begin
+        # Seventh we calculate constraint force
+        if sim_mode == self.TSA_SIM:
+            for i in range(self.constraint_number):
+                # self.constraint_length[i] = 0.0
+                # start_point = self.constraint_start_point[i]
+                for j in range(self.max_control_length):
+                    unit_id = self.unit_control[i, j]
+                    if unit_id != -1:
+                        center = self.calculateCenterPoint3DWithUnitId(self.unit_indices[unit_id])
+                        # force_dir = center - start_point
+                        self.unit_center[unit_id] = center
+                        # self.constraint_length[i] += force_dir.norm()
+                        # start_point = center            
+                    else:
+                        break
+            accumulate_index = 0
+            self.calculateStringDistanceParallel(tsa_turning_angle)
+            for i in range(self.total_root_number):
+                dup_time = self.constraint_point_number[i]
+                if dup_time > 1:
+                    # if abs(self.tsa_turning_angle) <= tm.pi * 2 / dup_time:
+                    if not self.constraint_angle_enable[i] or (self.constraint_angle_enable[i] and abs(tsa_turning_angle) < abs(self.constraint_angle[i])):
+                        for j in range(dup_time):
+                            self.constraint_start_point[j + accumulate_index] = [
+                                self.constraint_start_point_duplicate[i][X] + self.direction[i][X] * tm.cos(tsa_turning_angle + math.pi * 2 * j / dup_time), 
+                                self.constraint_start_point_duplicate[i][Y] + self.direction[i][Y] * tm.cos(tsa_turning_angle + math.pi * 2 * j / dup_time), 
+                                self.origami_z_bias + self.r1 * tm.sin(tsa_turning_angle + math.pi * 2 * j / dup_time)
+                            ]
+                            self.constraint_length[j + accumulate_index] = 0.0
+                            start_point = self.constraint_start_point[j + accumulate_index]
+                            for k in range(self.max_control_length):
+                                if self.unit_control[j + accumulate_index, k] != -1:
+                                    end_point = self.unit_center[self.unit_control[j + accumulate_index, k]]
+                                    self.constraint_length[j + accumulate_index] += (end_point - start_point).norm()
+                                    start_point = end_point
+                                else:
+                                    break
+                            if self.constraint_end_point_existence[j + accumulate_index]:
+                                self.constraint_length[j + accumulate_index] += (self.constraint_end_point[j + accumulate_index] - start_point).norm()
+                            # self.constraint_initial_length[j + accumulate_index] = self.backup_constraint_length[j + accumulate_index]
+                        accumulate_index += dup_time
+                    else:
+                        true_angle = tsa_turning_angle - self.constraint_angle[i]
+                        for j in range(dup_time):
+                            self.visual_constraint_start_point[j + accumulate_index] = [
+                                self.constraint_start_point_duplicate[i][X] + self.direction[i][X] * tm.cos(tsa_turning_angle + math.pi * 2 * j / dup_time), 
+                                self.constraint_start_point_duplicate[i][Y] + self.direction[i][Y] * tm.cos(tsa_turning_angle + math.pi * 2 * j / dup_time), 
+                                self.origami_z_bias + self.r1 * tm.sin(tsa_turning_angle + math.pi * 2 * j / dup_time)
+                            ]
+
+                        x0 = self.constraint_start_point_duplicate[i]
+
+                        x1 = tm.vec3([.0, .0, .0])
+                        for j in range(accumulate_index, accumulate_index + dup_time):
+                            x1 += self.unit_center[self.unit_control[j, 0]]
+                        
+                        x1 /= dup_time
+
+                        # print(x1)
+
+                        d2 = .0
+                        for j in range(accumulate_index, accumulate_index + dup_time):
+                            d2 += (self.unit_center[self.unit_control[i, 0]] - x1).norm()
+                        d2 = d2 / dup_time * 2.
+
+                        eff_1 = self.d1 / (d2 + self.d1 + abs(true_angle) * self.ds)
+                        eff_2 = d2 / (d2 + self.d1 + abs(true_angle) * self.ds)
+
+                        new_cp1 = eff_1 * (x1 - x0) + x0
+                        new_cp2 = x1 - eff_2 * (x1 - x0)
+                        
+                        self.intersection_point[i] = new_cp1
+
+                        for j in range(accumulate_index, accumulate_index + dup_time):
+                            self.constraint_start_point[j] = new_cp2
+                            # self.constraint_length[j] = tm.sqrt((x1 - x0).norm() ** 2 + (d2 + self.d1 + abs(true_angle) * self.ds) ** 2 / 4.)
+                            self.constraint_length[j] = (self.unit_center[self.unit_control[j, 0]] - new_cp2).norm() + (new_cp1 - self.visual_constraint_start_point[j]).norm() + tm.sqrt((new_cp2 - new_cp1).norm() ** 2 + (true_angle * self.ds) ** 2)
+                            
+                            start_point = self.unit_center[self.unit_control[j, 0]]
+                            for k in range(1, self.max_control_length):
+                                if self.unit_control[j, k] != -1:
+                                    end_point = self.unit_center[self.unit_control[j, k]]
+                                    self.constraint_length[j] += (end_point - start_point).norm()
+                                    start_point = end_point
+                                else:
+                                    break
+                            if self.constraint_end_point_existence[j]:
+                                self.constraint_length[j] += (self.constraint_end_point[j] - start_point).norm()
+
+                        accumulate_index += dup_time
+                else:
+                    self.constraint_start_point[accumulate_index] = [
+                        self.constraint_start_point_duplicate[i][X], 
+                        self.constraint_start_point_duplicate[i][Y], 
+                        self.origami_z_bias
+                    ]
+                    self.constraint_length[accumulate_index] = 0.0
+                    start_point = self.constraint_start_point[accumulate_index]
+                    for k in range(self.max_control_length):
+                        if self.unit_control[accumulate_index, k] != -1:
+                            end_point = self.unit_center[self.unit_control[accumulate_index, k]]
+                            self.constraint_length[accumulate_index] += (end_point - start_point).norm()
+                            start_point = end_point
+                        else:
+                            break
+                    if self.constraint_end_point_existence[accumulate_index]:
+                        self.constraint_length[accumulate_index] += (self.constraint_end_point[accumulate_index] - start_point).norm()
+                    accumulate_index += 1  
+            
+            for i in range(self.constraint_number):
+                # self.constraint_length[i] += (self.constraint_end_point[i] - start_point).norm()
+                if self.constraint_length[i] > self.constraint_initial_length[i]: # add force
+                    self.total_energy[0] += self.string_params[0] * tm.exp(self.constraint_length[i] - self.constraint_initial_length[i])
+                    start_point = self.constraint_start_point[i]
+                    before_force_dir = tm.vec3([0.0, 0.0, 0.0])
+                    before_tight_indice = 0.0
+                    for j in range(self.max_control_length):
+                        if self.unit_control[i, j] != -1:
+                            kp_id = self.unit_indices[self.unit_control[i, j]]
+                            unit_kp_num = self.calculateKpNumWithUnitId(kp_id)
+                            end_point = self.calculateCenterPoint3DWithUnitId(kp_id)
+                            force_dir = end_point - start_point
+                            tight_indice = 0.0
+                            axis_force = tm.vec3([0., 0., 0.])
+                                
+                            if j == 0: # 1 point
+                                #引导力
+                                hole_direction = self.hole_dir[i, j]
+                                nm = self.calculateNormalVectorWithUnitId(self.unit_indices[self.unit_control[i, j]])
+                                penetration = tm.normalize(force_dir).dot(nm) * hole_direction
+                                # print(penetration)
+                                if penetration >= -self.beta: #penetration
+                                    tight_indice = (penetration + self.beta) / self.beta
+                                    if penetration >= 0:
+                                        force_dir = force_dir - (force_dir.dot(nm)) * nm - nm * hole_direction
+                                axis_force = self.getAxisForce(force_dir, i)
+                                # axis_force = tm.normalize(force_dir) * self.string_params[0] * (self.constraint_length[i] - self.constraint_initial_length[i])
+                                for k in range(unit_kp_num):
+                                    # self.force[kp_id[k]] += -axis_force
+                                    self.record_force[kp_id[k]] += -axis_force
+                            else:
+                                #引导力, 只算系数
+                                true_tight_indice = 0.0
+                                hole_direction = self.hole_dir[i, j - 1]
+                                nm = self.calculateNormalVectorWithUnitId(self.unit_indices[self.unit_control[i, j - 1]])
+                                penetration = tm.normalize(force_dir).dot(nm) * hole_direction
+                                # print(penetration)
+                                if penetration >= -self.beta: #penetration
+                                    true_tight_indice = (penetration + self.beta) / self.beta
+                                #引导力, 用于存储
+                                tight_indice = 0.0
+                                hole_direction = self.hole_dir[i, j]
+                                nm = self.calculateNormalVectorWithUnitId(self.unit_indices[self.unit_control[i, j]])
+                                # print(nm)
+                                penetration = tm.normalize(force_dir).dot(nm) * hole_direction
+                                if penetration >= -self.beta: #penetration
+                                    tight_indice = (penetration + self.beta) / self.beta
+                                    if penetration >= 0:
+                                        force_dir = force_dir - (force_dir.dot(nm)) * nm - nm * hole_direction
+
+                                before_unit_id = self.unit_control[i, j - 1]
+                                before_kp_id = self.unit_indices[before_unit_id]
+                                before_kp_num = self.calculateKpNumWithUnitId(before_kp_id)
+                                before_n = self.calculateNormalVectorWithUnitId(self.unit_indices[before_unit_id])
+
+                                axis_force = self.getAxisForce(force_dir, i)
+                                for k in range(before_kp_num):
+                                    # self.force[before_kp_id[k]] += axis_force
+                                    self.record_force[before_kp_id[k]] += axis_force
+                                for k in range(unit_kp_num):
+                                    # self.force[kp_id[k]] += -axis_force
+                                    self.record_force[kp_id[k]] += -axis_force
+                                
+                                # print(tm.normalize(force_dir))
+                                # print(tm.normalize(before_force_dir))
+                                # shearing_dir = tm.normalize(force_dir) - tm.normalize(before_force_dir)
+                                # for k in range(len(before_kp_id)):
+                                #     force[before_kp_id[k]] += shearing_dir * shearing_k * (20.0 * shearing_dir.norm())
+                                #shearing
+                                n_string = before_force_dir.cross(force_dir)
+                                if abs(n_string.norm()) > 1e-5:
+                                    n_string = tm.normalize(n_string)
+                                    val = before_force_dir.dot(force_dir) / before_force_dir.norm() / force_dir.norm()
+                                    if val > 1.0:
+                                        val = 1.0
+                                    elif val < -1.0:
+                                        val = -1.0
+                                    angle = tm.acos(val)
+                                    # print(angle)
+                                    # if i == 0:
+                                    #     print(angle)
+                                    avg_vel = tm.vec3([.0, .0, .0])
+                                    for k in range(before_kp_num):
+                                        avg_vel += self.get_velocity_with_index(before_kp_id[k])
+                                    if abs(avg_vel.norm()) > 1e-5 :
+                                        avg_vel = tm.normalize(avg_vel)
+                                    #     angle1 = avg_vel.dot(-before_force_dir / before_force_dir.norm())
+                                    #     angle2 = avg_vel.dot(force_dir / force_dir.norm())
+                                    # else:
+                                    #     dir = [.0, .0, .0]
+                                    # print(avg_vel)
+                                    shearing_force = self.string_params[1] * angle * n_string.cross(before_force_dir) / (before_force_dir.norm() ** 2) + self.string_params[1] * angle * n_string.cross(force_dir) / (force_dir.norm() ** 2) + 2.0 * self.string_params[1] * angle * tm.normalize(-before_force_dir + force_dir) / (before_force_dir.norm() + force_dir.norm())
+                                    if self.constraint_length[i] - self.constraint_initial_length[i] > 0:
+                                        shearing_force *= (4.0 * (self.constraint_length[i] - self.constraint_initial_length[i]) / self.max_stretch_length + 1.0) / before_kp_num
+                                    # print(true_tight_indice, before_tight_indice)
+                                    if before_tight_indice <= 0.0:
+                                        force_val = true_tight_indice * (shearing_force - self.miu * shearing_force.norm() * avg_vel)
+                                        for k in range(before_kp_num):
+                                            # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                            self.record_force[before_kp_id[k]] += force_val
+                                    else:
+                                        if true_tight_indice <= 0.0:
+                                            force_val = before_tight_indice * (shearing_force - self.miu * shearing_force.norm() * avg_vel)
+                                            for k in range(before_kp_num):
+                                                # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                                self.record_force[before_kp_id[k]] += force_val
+                                        else:
+                                            force_val = abs(true_tight_indice - before_tight_indice) * (shearing_force - self.miu * shearing_force.norm() * avg_vel)
+                                            for k in range(before_kp_num):
+                                                # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                                self.record_force[before_kp_id[k]] += force_val
+
+                                    # for k in range(before_kp_num):
+                                    #     # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                    #     force[before_kp_id[k]] += tight_indice * shearing_force - miu * shearing_force.norm() * avg_vel - before_tight_indice * shearing_force
+                                    
+                                    #bonus momentum
+                                    if before_tight_indice > 0.0 and true_tight_indice > 0.0:
+                                        vp = tm.normalize(before_force_dir - before_force_dir.dot(before_n) * before_n)
+                                        vq = tm.normalize(force_dir - force_dir.dot(before_n) * before_n)
+                                        vt = tm.normalize(vp + vq)
+                                        # print("vt: ", vt)
+                                        # print("before_n: ", before_n)
+                                        bonus_val = shearing_force.norm() * self.d_hole * (before_tight_indice + true_tight_indice) / 2.0
+                                        total_force = tm.vec3([.0, .0, .0])
+                                        # print("bonus_val: ", bonus_val)
+
+                                        center = self.unit_center[before_unit_id] 
+    
+                                        hole_direction = self.hole_dir[i, j - 1]
+
+                                        share_bonus = bonus_val * before_n * hole_direction
+
+                                        for k in range(before_kp_num):
+                                            vl = center - self.x[before_kp_id[k]]
+                                            length = vl.dot(vt)
+                                            temp_force = -bonus_val / length * before_n * hole_direction
+                                            if bonus_val / length >= shearing_force.norm() * self.d_hole:
+                                                temp_force = -shearing_force.norm() * self.d_hole * before_n * hole_direction
+                                            elif bonus_val / length <= -shearing_force.norm() * self.d_hole:
+                                                temp_force = shearing_force.norm() * self.d_hole * before_n * hole_direction
+                                            total_force += temp_force
+                                            # self.force[before_kp_id[k]] += temp_force
+                                            self.record_force[before_kp_id[k]] += temp_force
+                                        # for k in range(before_kp_num):
+                                        #     vl = center - self.x[before_kp_id[k]]
+                                        #     length = vl.dot(vt)
+                                        #     temp_force = -share_bonus / length
+                                        #     if bonus_val / length >= share_bonus.norm():
+                                        #         temp_force = -share_bonus
+                                        #     elif bonus_val / length <= -share_bonus.norm():
+                                        #         temp_force = share_bonus
+                                        #     total_force += temp_force
+                                        #     self.force[before_kp_id[k]] += temp_force
+                                            # self.record_force[before_kp_id[k]] += temp_force
+                                            # if before_kp_id[k] == 3:
+                                            #     print(temp_force)
+                                        
+                                        #补偿
+                                        add_force = -total_force / before_kp_num
+                                        for k in range(before_kp_num):
+                                            self.record_force[before_kp_id[k]] += add_force
+                                            # self.record_force[before_kp_id[k]] += add_force
+                                            # if before_kp_id[k] == 3:
+                                            #     print(add_force)
+                                        
+                                        # print("checkpoint")
+                                        # for k in range(kp_num):
+                                        #     print(k, force[k] / point_mass + gravitational_acc)
+                                        # #补偿
+                                        # add_force = -total_force / len(before_kp_id)
+                                        # for k in range(len(before_kp_id)):
+                                        #     force[before_kp_id[k]] += add_force
+                                        #     record_force[before_kp_id[k]] += add_force
+                                        #     if before_kp_id[k] == 3:
+                                        #         print(add_force)
+                                            # print("unit_id: ", before_kp_id[k])
+                                            # print("force: ", -bonus_val / length * before_n)
+
+                                        # for k in range(kp_num):
+                                        #     print(k, force[k])
+                            # print(j)
+                            # print(axis_force)
+                            start_point = end_point
+                            before_force_dir = force_dir
+                            before_tight_indice = tight_indice
+                        else: #end
+                            if self.constraint_end_point_existence[i]:
+                                before_unit_id = self.unit_control[i, j - 1]
+                                force_dir = self.constraint_end_point[i] - start_point
+                                
+                                #引导力
+                                true_tight_indice = 0.0
+                                hole_direction = self.hole_dir[i, j - 1]
+                                nm = self.calculateNormalVectorWithUnitId(self.unit_indices[before_unit_id])
+
+                                penetration = tm.normalize(force_dir).dot(nm) * hole_direction
+                                if penetration >= -self.beta: #penetration
+                                    true_tight_indice = (penetration + self.beta) / self.beta
+                                    # force_dir = force_dir - (force_dir.dot(nm)) * nm - nm * hole_direction
+
+                                before_kp_id = self.unit_indices[before_unit_id]
+                                before_kp_num = self.calculateKpNumWithUnitId(before_kp_id)
+                                before_n = self.calculateNormalVectorWithUnitId(self.unit_indices[before_unit_id])
+
+                                axis_force = axis_force = self.getAxisForce(force_dir, i)
+                                self.end_force[0] = axis_force.norm()
+
+                                for k in range(before_kp_num):
+                                    # self.force[before_kp_id[k]] += axis_force
+                                    self.record_force[before_kp_id[k]] += axis_force
+                                #shearing
+                                n_string = before_force_dir.cross(force_dir)
+                                if abs(n_string.norm()) > 1e-5:
+                                    n_string = tm.normalize(n_string)
+                                    val = before_force_dir.dot(force_dir) / before_force_dir.norm() / force_dir.norm()
+                                    if val > 1.0:
+                                        val = 1.0
+                                    elif val < -1.0:
+                                        val = -1.0
+                                    angle = tm.acos(val)
+
+                                    # avg_vel = tm.vec3([.0, .0, .0])
+                                    # for k in range(before_kp_num):
+                                    #     avg_vel += get_velocity_with_index(before_kp_id[k])
+                                    
+                                    # if abs(avg_vel.norm()) > 1e-5 :
+                                    #     avg_vel = tm.normalize(avg_vel)
+                                    #     angle1 = tm.acos(avg_vel.dot(-before_force_dir) / before_force_dir.norm())
+                                    #     print(avg_vel)
+                                    avg_vel = tm.vec3([.0, .0, .0])
+                                    for k in range(before_kp_num):
+                                        avg_vel += self.get_velocity_with_index(before_kp_id[k])
+                                    if abs(avg_vel.norm()) > 1e-5 :
+                                        avg_vel = tm.normalize(avg_vel)
+                                    # dir = -(before_force_dir) / before_force_dir.norm()
+                                    # else:
+                                    #     print("0")
+                                    shearing_force = self.string_params[1] * angle * n_string.cross(before_force_dir) / (before_force_dir.norm() ** 2) + self.string_params[1] * angle * n_string.cross(force_dir) / (force_dir.norm() ** 2) + 2.0 * self.string_params[1] * angle * tm.normalize(-before_force_dir + force_dir) / (before_force_dir.norm() + force_dir.norm())
+                                    if self.constraint_length[i] - self.constraint_initial_length[i] > 0:
+                                        shearing_force *= (4.0 * (self.constraint_length[i] - self.constraint_initial_length[i]) / self.max_stretch_length + 1.0) / before_kp_num
+                                    # print(true_tight_indice, before_tight_indice)
+                                    if before_tight_indice <= 0.0:
+                                        force_val = true_tight_indice * shearing_force - self.miu * shearing_force.norm() * avg_vel
+                                        for k in range(before_kp_num):
+                                            # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                            self.record_force[before_kp_id[k]] += force_val
+                                    else:
+                                        if true_tight_indice <= 0.0:
+                                            force_val = before_tight_indice * shearing_force - self.miu * shearing_force.norm() * avg_vel
+                                            for k in range(before_kp_num):
+                                                # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                                self.record_force[before_kp_id[k]] += force_val
+                                        else:
+                                            force_val = abs(true_tight_indice - before_tight_indice) * shearing_force - self.miu * shearing_force.norm() * avg_vel
+                                            for k in range(before_kp_num):
+                                                # force[before_kp_id[k]] += shearing_force - miu * (shearing_force.norm()) * avg_vel
+                                                self.record_force[before_kp_id[k]] += force_val
+                                    # for k in range(before_kp_num):
+                                    #     force[before_kp_id[k]] += -tight_indice * shearing_force - miu * shearing_force.norm() * avg_vel + before_tight_indice * shearing_force
+                                        # miu * (shearing_force.norm() - point_mass * gravitational_acc[Z]) * avg_vel
+                                    #bonus momentum
+                                    if before_tight_indice > 0.0 and true_tight_indice > 0.0:
+                                        vp = tm.normalize(before_force_dir - before_force_dir.dot(before_n) * before_n)
+                                        vq = tm.normalize(force_dir - force_dir.dot(before_n) * before_n)
+                                        vt = tm.normalize(vp + vq)
+                                        bonus_val = shearing_force.norm() * self.d_hole * (before_tight_indice + true_tight_indice) / 2.0
+                                        total_force = tm.vec3([.0, .0, .0])
+
+                                        center = self.unit_center[before_unit_id]
+
+                                        hole_direction = self.hole_dir[i, j - 1]
+
+                                        share_bonus = bonus_val * before_n * hole_direction
+
+                                        for k in range(before_kp_num):
+                                            vl = center - self.x[before_kp_id[k]]
+                                            length = vl.dot(vt)
+                                            temp_force = -bonus_val / length * before_n * hole_direction
+                                            if bonus_val / length >= shearing_force.norm() * self.d_hole:
+                                                temp_force = -shearing_force.norm() * self.d_hole * before_n * hole_direction
+                                            elif bonus_val / length <= -shearing_force.norm() * self.d_hole:
+                                                temp_force = shearing_force.norm() * self.d_hole * before_n * hole_direction
+                                            total_force += temp_force
+                                            # self.force[before_kp_id[k]] += temp_force
+                                            self.record_force[before_kp_id[k]] += temp_force
+                                        # for k in range(before_kp_num):
+                                        #     vl = center - self.x[before_kp_id[k]]
+                                        #     length = vl.dot(vt)
+                                        #     temp_force = -share_bonus / length
+                                        #     if bonus_val / length >= share_bonus.norm():
+                                        #         temp_force = -share_bonus
+                                        #     elif bonus_val / length <= -share_bonus.norm():
+                                        #         temp_force = share_bonus
+                                        #     total_force += temp_force
+                                        #     self.force[before_kp_id[k]] += temp_force
+                                            # self.record_force[before_kp_id[k]] += temp_force
+                                            # if before_kp_id[k] == 3:
+                                            #     print(temp_force)
+                                        
+                                        #补偿
+                                        add_force = -total_force / before_kp_num
+                                        for k in range(before_kp_num):
+                                            self.record_force[before_kp_id[k]] += add_force
+                                            # self.record_force[before_kp_id[k]] += add_force
+                                            # if before_kp_id[k] == 3:
+                                            #     print(add_force)
+                                        # for k in range(kp_num):
+                                        #     print(k, force[k] / point_mass + gravitational_acc)
+                            break
+
+        for i in range(self.kp_num):
+            force_value = self.record_force[i].norm()
+            if force_value > self.max_force[0]:
+                self.max_force[0] = force_value
+            self.force[i] += self.record_force[i] 
+        # end
 
         # print(self.total_energy[0])
 

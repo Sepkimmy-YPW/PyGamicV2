@@ -587,7 +587,7 @@ class StlMaker:
         self.pillar_unit_list = []
         for i in range(len(self.unit_list)):
             unit = self.unit_list[i]
-            original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.min_bias * 2., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
+            original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.print_accuracy * 3., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
             # new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
             # reverse_kps = []
             # for i in range(0, -len(new_kps), -1):

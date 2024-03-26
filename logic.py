@@ -1219,24 +1219,27 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 self.addHoleToUnitUsingRealAxis(ele[0][X], ele[0][Y])
 
             #4 Add strings
-            self.string_total_information = []
-            self.strings = []   
-            string_type_list = input_json['strings']['type']
-            string_id_list = input_json['strings']['id']
-            string_reverse_list = input_json['strings']['reverse']
-            for i in range(len(string_type_list)):
-                self.startAddString()
-                if string_reverse_list[i][0] == -1:
-                    self.string_type = BOTTOM
-                else:
-                    self.string_type = TOP
-                for j in range(len(string_type_list[i])):
-                    if string_type_list[i][j] == 'A':
-                        self.addTsaAPointWithResolutionValue(string_id_list[i][j])
+            try:
+                self.string_total_information = []
+                self.strings = []   
+                string_type_list = input_json['strings']['type']
+                string_id_list = input_json['strings']['id']
+                string_reverse_list = input_json['strings']['reverse']
+                for i in range(len(string_type_list)):
+                    self.startAddString()
+                    if string_reverse_list[i][0] == -1:
+                        self.string_type = BOTTOM
                     else:
-                        unit_axis = self.units[string_id_list[i][j]].getCenter()
-                        self.addStringPoint(unit_axis[X], unit_axis[Y], string_id_list[i][j], 'B', string_reverse_list[i][j])
-                self.endAddString()
+                        self.string_type = TOP
+                    for j in range(len(string_type_list[i])):
+                        if string_type_list[i][j] == 'A':
+                            self.addTsaAPointWithResolutionValue(string_id_list[i][j])
+                        else:
+                            unit_axis = self.units[string_id_list[i][j]].getCenter()
+                            self.addStringPoint(unit_axis[X], unit_axis[Y], string_id_list[i][j], 'B', string_reverse_list[i][j])
+                    self.endAddString()
+            except:
+                pass
 
             try:
                 self.backup_unit_bias_list = input_json['unit_bias_list']

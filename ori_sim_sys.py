@@ -3,7 +3,7 @@ from utils import *
 
 # 定义折纸系统，包含各刚度和单元信息
 class OrigamiSimulationSystem:
-    def __init__(self, unit_edge_max, spring_k=20., bending_k=.4, face_k=.5, material_density=1e-9) -> None:
+    def __init__(self, unit_edge_max, spring_k=20., bending_k=.8, face_k=.5, material_density=1e-9) -> None:
         self.unit_edge_max = unit_edge_max
         self.unit_list = []
         self.kps = []
@@ -156,24 +156,26 @@ class OrigamiSimulationSystem:
         for i in range(len(self.unit_list)):
             indices = self.indices[i]
             unit_kp_len = len(indices)
-            line_start_indice = indices[0]
-            for j in range(2, unit_kp_len - 1):
-                line_end_indice = indices[j]
-                start_row = self.connection_matrix[line_start_indice]
-                end_row = self.connection_matrix[line_end_indice]
+            
+            for start_id in range(0, unit_kp_len - 2):
+                line_start_indice = indices[start_id]
+                for j in range(start_id + 2, unit_kp_len):
+                    line_end_indice = indices[j]
+                    start_row = self.connection_matrix[line_start_indice]
+                    end_row = self.connection_matrix[line_end_indice]
 
-                relevant_kp = []
-                for k in range(kp_len):
-                    if abs(start_row[k] - end_row[k]) < 1e-5 and start_row[k] > 0:
-                        relevant_kp.append(k)
-                
-                if len(relevant_kp) == 2 and [line_end_indice, line_start_indice] not in self.facet_crease_pairs:
-                    facet_crease_pair = [line_start_indice, line_end_indice]
-                    vec1xy = [self.kps[line_start_indice][0] - self.kps[relevant_kp[0]][0], self.kps[line_start_indice][1] - self.kps[relevant_kp[0]][1]]
-                    vec2xy = [self.kps[relevant_kp[1]][0] - self.kps[line_start_indice][0], self.kps[relevant_kp[1]][1] - self.kps[line_start_indice][1]]
-                    result = vec1xy[0] * vec2xy[1] - vec1xy[1] * vec2xy[0]
-                    if result >= 0:
-                        self.facet_bending_pairs.append([relevant_kp[0], relevant_kp[1]])
-                    else:
-                        self.facet_bending_pairs.append([relevant_kp[1], relevant_kp[0]])
-                    self.facet_crease_pairs.append(facet_crease_pair)
+                    relevant_kp = []
+                    for k in range(kp_len):
+                        if abs(start_row[k] - end_row[k]) < 1e-5 and start_row[k] > 0:
+                            relevant_kp.append(k)
+                    
+                    if len(relevant_kp) == 2 and [line_end_indice, line_start_indice] not in self.facet_crease_pairs and relevant_kp[0] in indices and relevant_kp[1] in indices:
+                        facet_crease_pair = [line_start_indice, line_end_indice]
+                        vec1xy = [self.kps[line_start_indice][0] - self.kps[relevant_kp[0]][0], self.kps[line_start_indice][1] - self.kps[relevant_kp[0]][1]]
+                        vec2xy = [self.kps[relevant_kp[1]][0] - self.kps[line_start_indice][0], self.kps[relevant_kp[1]][1] - self.kps[line_start_indice][1]]
+                        result = vec1xy[0] * vec2xy[1] - vec1xy[1] * vec2xy[0]
+                        if result >= 0:
+                            self.facet_bending_pairs.append([relevant_kp[0], relevant_kp[1]])
+                        else:
+                            self.facet_bending_pairs.append([relevant_kp[1], relevant_kp[0]])
+                        self.facet_crease_pairs.append(facet_crease_pair)
