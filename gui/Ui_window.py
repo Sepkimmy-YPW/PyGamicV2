@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2023-2024 Autumn\11-1 SGLAB\pygamic\gui\window.ui'
+# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2023-2024 Spring\11-1 SGLAB\pygamic\gui\window.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.4
 #
@@ -125,6 +125,7 @@ class Ui_MainWindow(object):
         self.doubleSpinBox_expert_mode.setGeometry(QtCore.QRect(20, 130, 71, 22))
         self.doubleSpinBox_expert_mode.setAlignment(QtCore.Qt.AlignRight|QtCore.Qt.AlignTrailing|QtCore.Qt.AlignVCenter)
         self.doubleSpinBox_expert_mode.setSingleStep(0.02)
+        self.doubleSpinBox_expert_mode.setProperty("value", 1.0)
         self.doubleSpinBox_expert_mode.setObjectName("doubleSpinBox_expert_mode")
         self.label_current_unit = QtWidgets.QLabel(self.widget)
         self.label_current_unit.setGeometry(QtCore.QRect(10, 0, 81, 21))

@@ -8,7 +8,7 @@ from units import *
 from cdftool import GraphModel, MCTS
 
 #----折纸信息初始化开始----#
-data_type = ti.f64
+data_type = ti.f32
 ti.init(arch=ti.cpu, default_fp=data_type, fast_math=False, advanced_optimization=False, verbose=False)
 
 @ti.data_oriented
@@ -174,7 +174,7 @@ class OrigamiSimulator:
         self.miu = 6. #摩擦系数
         self.rotation_step = tm.pi / 36.0
         self.max_stretch_length = 1.
-        self.facet_k = 1. * self.ori_sim.bending_k
+        self.facet_k = 2. * self.ori_sim.bending_k
 
         self.enable_add_folding_angle = 0. #启用折角增加的仿真模式
         self.enable_tsa_rotate = 0 #启用TSA驱动的仿真模式
@@ -1238,7 +1238,9 @@ class OrigamiSimulator:
                 C2 = self.bending_params[1]
                 t1 = self.bending_params[2]
                 t2 = self.bending_params[3]
-                A = self.bending_params[4] * self.bending_params[5]
+                a1 = self.bending_params[4]
+                a2 = self.bending_params[5]
+                A = a1 * a2
                 dir = self.bending_params[6]
                 n1 = self.n1[0]
                 n2 = self.n2[0]
@@ -1246,17 +1248,17 @@ class OrigamiSimulator:
                 df1dn2 = ti.Matrix.zero(data_type, 3, 3)
                 df2dn1 = ti.Matrix.zero(data_type, 3, 3)
                 df2dn2 = ti.Matrix.zero(data_type, 3, 3)
-                if (self.crease_type[i] == VALLEY and dir <= 0) or (self.crease_type[i] == MOUNTAIN and dir >= 0):
-                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * n2, n1[Y] * n2, n1[Z] * n2]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * n1, n1[Y] * n1, n1[Z] * n1]))
-                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * n2, n2[Y] * n2, n2[Z] * n2]))
-                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * n1, n2[Y] * n1, n2[Z] * n1]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                if (self.crease_type[i] == VALLEY):
+                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]))
+                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]))
+                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
                     # print(df2dn1)
                 else:
-                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * n2, n1[Y] * n2, n1[Z] * n2]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * n1, n1[Y] * n1, n1[Z] * n1]))
-                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * n2, n2[Y] * n2, n2[Z] * n2]))
-                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * n1, n2[Y] * n1, n2[Z] * n1]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]))
+                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]))
+                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
                 dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
                 # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
                 dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
@@ -1321,11 +1323,17 @@ class OrigamiSimulator:
                 self.record_force[related_p2] += rpf2
             
                 self.triplets_bending[i] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
+                # print("triplet_bending: ")
+                # print(self.triplets_bending[0])
+                # print("position: ")
+                # print(x1, x2, x3, x4)
                 C1 = self.bending_params[0]
                 C2 = self.bending_params[1]
                 t1 = self.bending_params[2]
                 t2 = self.bending_params[3]
-                A = self.bending_params[4] * self.bending_params[5]
+                a1 = self.bending_params[4]
+                a2 = self.bending_params[5]
+                A = a1 * a2
                 dir = self.bending_params[6]
                 n1 = self.n1[0]
                 n2 = self.n2[0]
@@ -1333,21 +1341,23 @@ class OrigamiSimulator:
                 df1dn2 = ti.Matrix.zero(data_type, 3, 3)
                 df2dn1 = ti.Matrix.zero(data_type, 3, 3)
                 df2dn2 = ti.Matrix.zero(data_type, 3, 3)
-                if dir < 0:
-                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * n2, n1[Y] * n2, n1[Z] * n2]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * n1, n1[Y] * n1, n1[Z] * n1]))
-                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * n2, n2[Y] * n2, n2[Z] * n2]))
-                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * n1, n2[Y] * n1, n2[Z] * n1]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                if (self.crease_type[i] == VALLEY):
+                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    # print(df2dn1)
                 else:
-                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * n2, n1[Y] * n2, n1[Z] * n2]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * n1, n1[Y] * n1, n1[Z] * n1]))
-                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * n2, n2[Y] * n2, n2[Z] * n2]))
-                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * n1, n2[Y] * n1, n2[Z] * n1]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
                 dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
                 # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
                 dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
                 dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
                 dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
+                # print(dn2dx1)
                 dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
                 dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
                 # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
@@ -1431,7 +1441,9 @@ class OrigamiSimulator:
                 C2 = self.bending_params[1]
                 t1 = self.bending_params[2]
                 t2 = self.bending_params[3]
-                A = self.bending_params[4] * self.bending_params[5]
+                a1 = self.bending_params[4]
+                a2 = self.bending_params[5]
+                A = a1 * a2
                 dir = self.bending_params[6]
                 n1 = self.n1[0]
                 n2 = self.n2[0]
@@ -1441,16 +1453,27 @@ class OrigamiSimulator:
                 df1dn2 = ti.Matrix.zero(data_type, 3, 3)
                 df2dn1 = ti.Matrix.zero(data_type, 3, 3)
                 df2dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # if (self.crease_type[i] == VALLEY):
+                #     df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                #     df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     # print(df2dn1)
+                # else:
+                #     df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                #     df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
                 if dir < 0:
-                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * n2, n1[Y] * n2, n1[Z] * n2]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * n1, n1[Y] * n1, n1[Z] * n1]))
-                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * n2, n2[Y] * n2, n2[Z] * n2]))
-                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * n1, n2[Y] * n1, n2[Z] * n1]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
                 else:
-                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * n2, n1[Y] * n2, n1[Z] * n2]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * n1, n1[Y] * n1, n1[Z] * n1]))
-                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * n2, n2[Y] * n2, n2[Z] * n2]))
-                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * n1, n2[Y] * n1, n2[Z] * n1]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
                 dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
                 # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
                 dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])

@@ -583,16 +583,16 @@ class StlMaker:
         return special_point_list
 
     def getSpecialListAndPillar(self, bias):
-        self.special_point_list = [[]]
+        self.special_point_list = []
         self.pillar_unit_list = []
         for i in range(len(self.unit_list)):
             unit = self.unit_list[i]
             original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.print_accuracy * 3., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
-            # new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
-            # reverse_kps = []
-            # for i in range(0, -len(new_kps), -1):
-            #     reverse_kps.append(new_kps[i])
-            # self.special_point_list.append(reverse_kps)
+            new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
+            reverse_kps = []
+            for i in range(0, -len(new_kps), -1):
+                reverse_kps.append(new_kps[i])
+            self.special_point_list.append(reverse_kps)
 
             pillar_for_unit = []
             pillar_resolution = 3
@@ -743,7 +743,7 @@ class StlMaker:
         tris = []
         for i in range(len(self.unit_list)):
             unit = self.unit_list[i]
-            # special_point_list = self.special_point_list[i]
+            special_point_list = self.special_point_list[i]
             pillars = self.pillar_unit_list[i]
             tris += self.calculateTriPlaneWithBiasAndHeight(
                 unit                =unit, 
@@ -753,7 +753,7 @@ class StlMaker:
                 base_height         =base_height,
                 upper_height        =upper_height, 
                 add_hole            =True, 
-                another_points_list =pillars,
+                another_points_list =pillars + [special_point_list],
                 additional_crease   =False,
                 side_tri            =BORDER
             )
@@ -2071,7 +2071,7 @@ class StlMaker:
         if upper_height == None:
             upper_height = self.board_height
 
-        self.board_tri_list.clear()
+        # self.board_tri_list.clear()
         for i in range(len(self.pillar_unit_list)):
             pillars = self.pillar_unit_list[i]
             for pillar in pillars:

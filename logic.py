@@ -40,7 +40,7 @@ from cdftool import *
 # --Stltool module for outputing 3D model file of the origami-- #
 from stltool import StlMaker
 
-from phys_sim5 import OrigamiSimulator
+from phys_sim6 import OrigamiSimulator
 from phys_sim4E import OrigamiSimulator as OrigamiSimulatorE
 
 # Window for user to design origami
