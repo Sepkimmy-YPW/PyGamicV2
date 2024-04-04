@@ -587,12 +587,21 @@ class StlMaker:
         self.pillar_unit_list = []
         for i in range(len(self.unit_list)):
             unit = self.unit_list[i]
+            exist_modify = False
+            for j in range(len(unit.getCrease())):
+                if self.unit_bias_list[i][j] != None:
+                    exist_modify = True
+                    break
+            
             original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.print_accuracy * 3., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
             new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
             reverse_kps = []
-            for i in range(0, -len(new_kps), -1):
-                reverse_kps.append(new_kps[i])
-            self.special_point_list.append(reverse_kps)
+            for k in range(0, -len(new_kps), -1):
+                reverse_kps.append(new_kps[k])
+            if not exist_modify:
+                self.special_point_list.append(reverse_kps)
+            else:
+                self.special_point_list.append([])
 
             pillar_for_unit = []
             pillar_resolution = 3
@@ -600,10 +609,15 @@ class StlMaker:
             accumulate_index = 0
             creases = unit.getCrease()
             for j in range(len(creases)):
+                if self.unit_bias_list[i][j] != None:
+                    if j in problem_id:
+                        accumulate_index += 1
+                        continue
+                    continue
                 crease = creases[j]
-                next_crease = creases[(j + 1) % len(creases)]
+                # next_crease = creases[(j + 1) % len(creases)]
                 length = crease.getLength()
-                next_length = next_crease.getLength()
+                # next_length = next_crease.getLength()
 
                 if j in problem_id:
                     accumulate_index += 1
@@ -620,7 +634,7 @@ class StlMaker:
                 
                 direction = crease.getDirection()
                 normal = crease.getNormal()
-                next_direction = next_crease.getDirection()
+                # next_direction = next_crease.getDirection()
 
                 if 24. * bias < length:
                     #middle pillar
@@ -1947,10 +1961,10 @@ class StlMaker:
                     self.tri_list[unit_id] = self.calculateTriPlaneWithBiasAndHeight(
                         unit                =unit, 
                         unit_id             =unit_id, 
-                        upper_bias          =2.0 * self.print_accuracy, 
+                        upper_bias          =self.print_accuracy, 
                         down_bias           =8.0 * self.print_accuracy, 
                         base_height         =0,
-                        upper_height        =2.0 * self.print_accuracy, 
+                        upper_height        =3.0 * self.print_accuracy, 
                         add_hole            =add_hole, 
                         another_points_list =deepcopy(another_points_list)+connection_right_holes,
                         additional_crease   =False,
@@ -1966,9 +1980,9 @@ class StlMaker:
                             unit                =unit, 
                             unit_id             =unit_id, 
                             upper_bias          =8.0 * self.print_accuracy, 
-                            down_bias           =2.0 * self.print_accuracy, 
-                            base_height         =self.print_accuracy * 2.0 + self.board_height,
-                            upper_height        =self.print_accuracy * 4.0 + self.board_height, 
+                            down_bias           =self.print_accuracy, 
+                            base_height         =self.print_accuracy * 3.0 + self.board_height,
+                            upper_height        =self.print_accuracy * 6.0 + self.board_height, 
                             add_hole            =add_hole, 
                             another_points_list =deepcopy(another_points_list)+connection_right_holes,
                             additional_crease   =False,
@@ -1978,9 +1992,9 @@ class StlMaker:
                             unit                =modified_unit, 
                             unit_id             =unit_id, 
                             upper_bias          =8.0 * self.print_accuracy, 
-                            down_bias           =2.0 * self.print_accuracy, 
-                            base_height         =self.print_accuracy * 2.0 + self.board_height,
-                            upper_height        =self.print_accuracy * 4.0 + self.board_height, 
+                            down_bias           =self.print_accuracy, 
+                            base_height         =self.print_accuracy * 3.0 + self.board_height,
+                            upper_height        =self.print_accuracy * 6.0 + self.board_height, 
                             add_hole            =add_hole, 
                             another_points_list =deepcopy(another_points_list)+connection_right_holes,
                             additional_crease   =False,
@@ -1989,10 +2003,10 @@ class StlMaker:
                     self.tri_list[unit_id] = self.calculateTriPlaneWithBiasAndHeight(
                         unit                =unit, 
                         unit_id             =unit_id, 
-                        upper_bias          =2.0 * self.print_accuracy, 
+                        upper_bias          =self.print_accuracy, 
                         down_bias           =8.0 * self.print_accuracy, 
                         base_height         =0,
-                        upper_height        =self.print_accuracy * 2.0, 
+                        upper_height        =self.print_accuracy * 3.0, 
                         add_hole            =add_hole, 
                         another_points_list =deepcopy(another_points_list)+connection_left_holes,
                         additional_crease   =False
@@ -2008,9 +2022,9 @@ class StlMaker:
                             unit                =unit, 
                             unit_id             =unit_id, 
                             upper_bias          =8.0 * self.print_accuracy, 
-                            down_bias           =2.0 * self.print_accuracy, 
-                            base_height         =self.print_accuracy * 2.0 + self.board_height,
-                            upper_height        =self.print_accuracy * 4.0 + self.board_height, 
+                            down_bias           =self.print_accuracy, 
+                            base_height         =self.print_accuracy * 3.0 + self.board_height,
+                            upper_height        =self.print_accuracy * 6.0 + self.board_height, 
                             add_hole            =add_hole, 
                             another_points_list =deepcopy(another_points_list)+connection_right_holes,
                             additional_crease   =False
@@ -2021,9 +2035,9 @@ class StlMaker:
                             unit                =modified_unit, 
                             unit_id             =unit_id, 
                             upper_bias          =8.0 * self.print_accuracy, 
-                            down_bias           =2.0 * self.print_accuracy, 
-                            base_height         =self.print_accuracy * 2.0 + self.board_height,
-                            upper_height        =self.print_accuracy * 4.0 + self.board_height, 
+                            down_bias           =self.print_accuracy, 
+                            base_height         =self.print_accuracy * 3.0 + self.board_height,
+                            upper_height        =self.print_accuracy * 6.0 + self.board_height, 
                             add_hole            =add_hole, 
                             another_points_list =deepcopy(another_points_list)+connection_right_holes,
                             additional_crease   =False
@@ -2033,6 +2047,13 @@ class StlMaker:
         if upper_height == None:
             upper_height = self.board_height
         unit = self.unit_list[unit_id]
+
+        exist_modify = False
+        for j in range(len(unit.getCrease())):
+            if self.unit_bias_list[unit_id][j] != None:
+                exist_modify = True
+                break
+        
         add_hole = False
         another_points_list = []
         for ele in self.unit_hole_list:
@@ -2054,18 +2075,19 @@ class StlMaker:
         if len(connection_left_holes) > 0:
             add_hole = True
 
-        self.board_tri_list += self.calculateTriPlaneWithBiasAndHeight(
-            unit                =unit, 
-            unit_id             =unit_id, 
-            upper_bias          =self.bias, 
-            down_bias           =self.bias, 
-            base_height         =base_height,
-            upper_height        =upper_height, 
-            add_hole            =add_hole, 
-            another_points_list =another_points_list+connection_left_holes,
-            additional_crease   =False,
-            penalty=3.0 * self.base_inner_bias if self.method == 'symmetry' else self.bias
-        )
+        if not exist_modify:
+            self.board_tri_list += self.calculateTriPlaneWithBiasAndHeight(
+                unit                =unit, 
+                unit_id             =unit_id, 
+                upper_bias          =self.bias, 
+                down_bias           =self.bias, 
+                base_height         =base_height,
+                upper_height        =upper_height, 
+                add_hole            =add_hole, 
+                another_points_list =another_points_list+connection_left_holes,
+                additional_crease   =False,
+                penalty=3.0 * self.base_inner_bias if self.method == 'symmetry' else self.bias
+            )
     
     def calculateTriPlaneForPillar(self, base_height=0, upper_height=None):
         if upper_height == None:
