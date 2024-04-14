@@ -38,9 +38,9 @@ from dxftool import *
 # --Cdftool module for doing computational design -- #
 from cdftool import *
 # --Stltool module for outputing 3D model file of the origami-- #
-from stltool import StlMaker
+from stltool2 import StlMaker
 
-from phys_sim6 import OrigamiSimulator
+from phys_sim import OrigamiSimulator
 from phys_sim4E import OrigamiSimulator as OrigamiSimulatorE
 
 # Window for user to design origami
@@ -614,12 +614,13 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             ])
 
     def cdfCurveFitting(self):
-        if len(self.x_list) == 0:
-            self.updateMessage("No curve has been imported, please import a curve file first...")
-            return
-        if self.limitation["direction_enable"] and len(self.dir_list) == 0:
-            self.updateMessage("No direction curve has been imported but direction match enabled, please import direction first...")
-            return
+        if self.limitation["match_mode"] != 3:
+            if len(self.x_list) == 0:
+                self.updateMessage("No curve has been imported, please import a curve file first...")
+                return
+            if self.limitation["direction_enable"] and len(self.dir_list) == 0:
+                self.updateMessage("No direction curve has been imported but direction match enabled, please import direction first...")
+                return
         if self.enable_output_stl:
             self.updateMessage("A stl file is being outputed, please wait...")
             return
@@ -634,13 +635,22 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             return
         
         self.enable_cdf_curve_fitting = True
-        self.cdf_curve_fitting_thread = CdfCurveFittingThread(
-            curve_name  =self.curve_name,
-            pref_pack   =self.limitation,
-            curve_x     =self.x_list,
-            curve_y     =self.y_list,
-            curve_dir   =self.dir_list if self.limitation["direction_enable"] else None
-        )
+        if self.limitation["match_mode"] != 3:
+            self.cdf_curve_fitting_thread = CdfCurveFittingThread(
+                curve_name  =self.curve_name,
+                pref_pack   =self.limitation,
+                curve_x     =self.x_list,
+                curve_y     =self.y_list,
+                curve_dir   =self.dir_list if self.limitation["direction_enable"] else None
+            )
+        else:
+            self.cdf_curve_fitting_thread = CdfCurveFittingThread(
+                curve_name  ="exoskeleton",
+                pref_pack   =self.limitation,
+                curve_x     =None,
+                curve_y     =None,
+                curve_dir   =None
+            )
         self.cdf_curve_fitting_thread._emit.connect(self.drawProcess)
         self.cdf_curve_fitting_thread.start()
 
@@ -1631,6 +1641,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.stl_writer.clearCrease()
 
             self.stl_writer.setPrintAccuracy(self.pref_pack['print_accuracy'])
+            self.stl_writer.setAsym(self.pref_pack["asym"])
+            self.stl_writer.setOnlyTwoSides(self.pref_pack["only_two_sides"])
 
             if len(self.strings):
                 self.stl_writer.string_width = self.strings[-1].width
@@ -1638,6 +1650,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
 
             self.stl_writer.setHeight(height)
             self.stl_writer.setBias(bias)
+            self.stl_writer.min_bias = self.pref_pack['middle_bias']
             self.stl_writer.setMethod(method)
             self.stl_writer.setThinMode(self.pref_pack['thin_mode'])
             self.stl_writer.setDbEnable(self.pref_pack['enable_db'])
@@ -1655,6 +1668,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.stl_writer.setUnitHoles(deepcopy(self.hole_kps))
             self.stl_writer.setUnitHoleSize(self.hole_size)
             self.stl_writer.setUnitHoleResolution(self.hole_resolution)
+
+            self.stl_writer.disableUsingModifiedUnit()
 
             # set connection hole
             if self.enable_connection:
@@ -3434,9 +3449,17 @@ class CdfCurveFittingThread(QThread):
         self.discrete_resolution = pref_pack["discrete_resolution"]
         self.hypar_enable = pref_pack["hypar_enable"]
         self.direction_enable = pref_pack["direction_enable"]
+
+        self.exo_angle1 = pref_pack["exo_angle1"]
+        self.exo_angle2 = pref_pack["exo_angle2"]
+        self.exo_X = pref_pack["exo_X"]
+        self.exo_Y = pref_pack["exo_Y"]
+        self.exo_theta = pref_pack["exo_theta"]
+
         self.BEST_MATCH = 0
         self.STRICT_MATCH = 1
         self.DISCRETE_MATCH = 2
+        self.EXO_MATCH = 3
     
     def run(self):
         step_min = self.pref_pack["row_number"][0]
@@ -3445,7 +3468,11 @@ class CdfCurveFittingThread(QThread):
         process_num = self.process_num
 
         cfh = CurveFittingHelper()
-        cfh.setGoalList([[self.x[i], self.y[i]] for i in range(len(self.x))])
+        if self.x != None:
+            cfh.setGoalList([[self.x[i], self.y[i]] for i in range(len(self.x))])
+        
+        else:
+            cfh.setExoGoal(self.exo_X, self.exo_Y, self.exo_theta * math.pi / 180.0)
 
         if self.direction_enable:
             cfh.setDirectionGoalList(self.dir)
@@ -3512,7 +3539,7 @@ class CdfCurveFittingThread(QThread):
                                 [k_data[2 * k], abs(k_data[2 * k + 1]), 0 if k_data[2 * k + 1] < 0 else 1] for k in range(i)
                             ])
 
-                            if (self.match_mode != self.DISCRETE_MATCH):
+                            if (self.match_mode == self.BEST_MATCH or self.match_mode == self.STRICT_MATCH):
                                 all_ef, all_ef_dir = tm.getAllEndEffector()
                                 cfh.setOriginList(all_ef)
                                 if self.match_mode == self.BEST_MATCH:
@@ -3523,6 +3550,28 @@ class CdfCurveFittingThread(QThread):
                                     cfh.setDirectionOriginList(all_ef_dir)
                                     p *= cfh.directionMatch(len(all_ef_dir))
                                 reward_list.append(p)
+
+                            elif (self.match_mode == self.EXO_MATCH):
+                                all_ef = []
+                                all_ef_dir = []
+                                tm.main_folding_angle = self.exo_angle1 * math.pi / 180.0
+                                tl = tm.getTransitionLines()
+                                all_ef.append(deepcopy(tm.end_ef))
+                                all_ef_dir.append(deepcopy(tm.end_ef_dir))
+                                intersect1 = calculateIntersection(tl)
+
+                                tm.main_folding_angle = self.exo_angle2 * math.pi / 180.0
+                                tl = tm.getTransitionLines()
+                                all_ef.append(deepcopy(tm.end_ef))
+                                all_ef_dir.append(deepcopy(tm.end_ef_dir))
+                                intersect2 = calculateIntersection(tl)
+
+                                cfh.setOriginList(all_ef)
+                                cfh.setDirectionOriginList(all_ef_dir)
+
+                                p = cfh.exoMatch(intersect1, intersect2)
+                                reward_list.append(p)
+
                             else:
                                 part_ef, _ = tm.getPartEndEffector(45)
                                 cfh.setOriginList(part_ef)

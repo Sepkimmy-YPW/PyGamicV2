@@ -80,7 +80,10 @@ class OrigamiDesigner:
             design_path_length = len(desc)
             k_desc = deepcopy(desc)
 
-            k_design_data.append([k_desc[0][0], k_desc[0][1] / 2, 0])
+            if k_desc[0][1] > 0:
+                k_design_data.append([k_desc[0][0], k_desc[0][1] / 2, 1])
+            else:
+                k_design_data.append([k_desc[0][0], k_desc[0][1] / 2, 0])
 
             for i in range(1, design_path_length):
                 length = k_desc[i][0]

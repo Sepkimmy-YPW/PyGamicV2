@@ -19,6 +19,32 @@
             "add_width": false
         }
     ],
+    "unit_bias_list": [
+        [
+            null,
+            null,
+            null,
+            null
+        ],
+        [
+            null,
+            null,
+            null,
+            null
+        ],
+        [
+            1.8,
+            null,
+            null,
+            null
+        ],
+        [
+            1.8,
+            null,
+            null,
+            null
+        ]
+    ],
     "util": {
         "hole_axis": [
             [
@@ -60,7 +86,7 @@
         "copy_time": 1,
         "entry_flag": 0,
         "add_hole_mode": true,
-        "hole_size": 1.0999999999999999,
+        "hole_size": 1.1,
         "hole_resolution": 18,
         "enable_connection": false,
         "con_left_length": 10.0,

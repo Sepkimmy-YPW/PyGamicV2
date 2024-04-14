@@ -44,7 +44,7 @@ class StlMaker:
 
         self.string_width = 2.0
 
-        self.min_bias = 0.1
+        self.min_bias = 0.12
 
         self.height = 2.0
         self.crease_height = 0.2
@@ -587,21 +587,21 @@ class StlMaker:
         self.pillar_unit_list = []
         for i in range(len(self.unit_list)):
             unit = self.unit_list[i]
-            exist_modify = False
-            for j in range(len(unit.getCrease())):
-                if self.unit_bias_list[i][j] != None:
-                    exist_modify = True
-                    break
+            # exist_modify = False
+            # for j in range(len(unit.getCrease())):
+            #     if self.unit_bias_list[i][j] != None:
+            #         exist_modify = True
+            #         break
             
-            original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.print_accuracy * 3., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
-            new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0.)
+            original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.print_accuracy * 3., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0., accumulation=True)
+            new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0., accumulation=True)
             reverse_kps = []
             for k in range(0, -len(new_kps), -1):
                 reverse_kps.append(new_kps[k])
-            if not exist_modify:
+            if 1:
                 self.special_point_list.append(reverse_kps)
-            else:
-                self.special_point_list.append([])
+            # else:
+            #     self.special_point_list.append([])
 
             pillar_for_unit = []
             pillar_resolution = 3
@@ -609,11 +609,11 @@ class StlMaker:
             accumulate_index = 0
             creases = unit.getCrease()
             for j in range(len(creases)):
-                if self.unit_bias_list[i][j] != None:
-                    if j in problem_id:
-                        accumulate_index += 1
-                        continue
-                    continue
+                # if self.unit_bias_list[i][j] != None:
+                #     if j in problem_id:
+                #         accumulate_index += 1
+                #         continue
+                #     continue
                 crease = creases[j]
                 # next_crease = creases[(j + 1) % len(creases)]
                 length = crease.getLength()
@@ -993,7 +993,7 @@ class StlMaker:
                                 break
         return tris
 
-    def calculateInnerBiasAndSettingHeight(self, unit, unit_id, bias, height, side, enable_strong_modify=False, border_penalty=0.0):
+    def calculateInnerBiasAndSettingHeight(self, unit, unit_id, bias, height, side, enable_strong_modify=False, border_penalty=0.0, accumulation=False):
         kps = unit.getSeqPoint()
         kp_num = len(kps)
         k_b = []
@@ -1004,7 +1004,10 @@ class StlMaker:
             if ele.getType() == BORDER:
                 bias_list.append(bias - border_penalty + 1e-3)
             elif unit_id != -1 and self.unit_bias_list[unit_id][i] != None:
-                bias_list.append(self.unit_bias_list[unit_id][i])
+                if accumulation:
+                    bias_list.append(self.unit_bias_list[unit_id][i] + bias)
+                else:
+                    bias_list.append(self.unit_bias_list[unit_id][i])
             else:
                 if side == UP:
                     if self.enable_difference == 1: #valley small
@@ -1125,7 +1128,7 @@ class StlMaker:
             if not intersection: break
         return upper_kps, problem_point_id
 
-    def calculateTriPlaneWithBiasAndHeight(self, unit, unit_id, upper_bias, down_bias, base_height, upper_height, add_hole=False, another_points_list=None, additional_crease=True, penalty=None, side_tri=None):
+    def calculateTriPlaneWithBiasAndHeight(self, unit, unit_id, upper_bias, down_bias, base_height, upper_height, add_hole=False, another_points_list=None, additional_crease=True, penalty=None, side_tri=None, accumulation=False, bottom_tri=True, upper_tri=True):
         if type(unit) == Unit:
             standard_kps = unit.getSeqPoint()
         else:
@@ -1148,9 +1151,9 @@ class StlMaker:
                 point[Z] = base_height
         if down_bias > 0:
             if penalty == None:
-                bottom_kps, bottom_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, down_bias, base_height, side, down_strong_modify, down_bias)
+                bottom_kps, bottom_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, down_bias, base_height, side, down_strong_modify, down_bias, accumulation)
             else:
-                bottom_kps, bottom_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, down_bias, base_height, side, down_strong_modify, down_bias - penalty)
+                bottom_kps, bottom_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, down_bias, base_height, side, down_strong_modify, down_bias - penalty, accumulation)
         elif down_bias == 0:
             bottom_kps = deepcopy(standard_kps)
             for ele in bottom_kps:
@@ -1160,9 +1163,9 @@ class StlMaker:
             return #error
         if upper_bias > 0:
             if penalty == None:
-                upper_kps, upper_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, upper_bias, upper_height, side, upper_strong_modify, upper_bias)
+                upper_kps, upper_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, upper_bias, upper_height, side, upper_strong_modify, upper_bias, accumulation)
             else:
-                upper_kps, upper_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, upper_bias, upper_height, side, upper_strong_modify, upper_bias - penalty)
+                upper_kps, upper_problem_id = self.calculateInnerBiasAndSettingHeight(unit, unit_id, upper_bias, upper_height, side, upper_strong_modify, upper_bias - penalty, accumulation)
         elif upper_bias == 0:
             upper_kps = deepcopy(standard_kps)
             for ele in upper_kps:
@@ -1174,15 +1177,16 @@ class StlMaker:
         upper_kp_num = len(upper_kps)
         tris = []
         # bottom
-        if not add_hole:
-            for cur in range(1, kp_num - 1):
-                vex1 = bottom_kps[0]
-                vex2 = bottom_kps[cur]
-                vex3 = bottom_kps[cur + 1]
-                ans = self.getTriangle(vex1, vex2, vex3)
-                tris.append(ans)
-        else:
-            tris += self.calculateTriPlaneWithHole(bottom_kps, another_points_list, -1)
+        if bottom_tri:
+            if not add_hole:
+                for cur in range(1, kp_num - 1):
+                    vex1 = bottom_kps[0]
+                    vex2 = bottom_kps[cur]
+                    vex3 = bottom_kps[cur + 1]
+                    ans = self.getTriangle(vex1, vex2, vex3)
+                    tris.append(ans)
+            else:
+                tris += self.calculateTriPlaneWithHole(bottom_kps, another_points_list, -1)
         #around
         if upper_strong_modify:
             forward_step = 0
@@ -1251,19 +1255,20 @@ class StlMaker:
                         tris.append(ans2)
                     cur = (cur + 1) % kp_num
         #upper
-        if not add_hole:
-            for cur in range(1, upper_kp_num - 1):
-                vex1 = upper_kps[0]
-                vex2 = upper_kps[cur]
-                vex3 = upper_kps[cur + 1]
-                ans = self.getTriangle(vex1, vex3, vex2)
-                tris.append(ans)
-        else:
-            upper_another_points_list = deepcopy(another_points_list)
-            for ele in upper_another_points_list:
-                for point in ele:
-                    point[Z] = upper_height
-            tris += self.calculateTriPlaneWithHole(upper_kps, upper_another_points_list, 1)
+        if upper_tri:
+            if not add_hole:
+                for cur in range(1, upper_kp_num - 1):
+                    vex1 = upper_kps[0]
+                    vex2 = upper_kps[cur]
+                    vex3 = upper_kps[cur + 1]
+                    ans = self.getTriangle(vex1, vex3, vex2)
+                    tris.append(ans)
+            else:
+                upper_another_points_list = deepcopy(another_points_list)
+                for ele in upper_another_points_list:
+                    for point in ele:
+                        point[Z] = upper_height
+                tris += self.calculateTriPlaneWithHole(upper_kps, upper_another_points_list, 1)
         #hole
         if add_hole:
             for id in range(len(another_points_list)):
@@ -2048,11 +2053,11 @@ class StlMaker:
             upper_height = self.board_height
         unit = self.unit_list[unit_id]
 
-        exist_modify = False
-        for j in range(len(unit.getCrease())):
-            if self.unit_bias_list[unit_id][j] != None:
-                exist_modify = True
-                break
+        # exist_modify = False
+        # for j in range(len(unit.getCrease())):
+        #     if self.unit_bias_list[unit_id][j] != None:
+        #         exist_modify = True
+        #         break
         
         add_hole = False
         another_points_list = []
@@ -2075,7 +2080,7 @@ class StlMaker:
         if len(connection_left_holes) > 0:
             add_hole = True
 
-        if not exist_modify:
+        if 1:
             self.board_tri_list += self.calculateTriPlaneWithBiasAndHeight(
                 unit                =unit, 
                 unit_id             =unit_id, 
@@ -2086,7 +2091,8 @@ class StlMaker:
                 add_hole            =add_hole, 
                 another_points_list =another_points_list+connection_left_holes,
                 additional_crease   =False,
-                penalty=3.0 * self.base_inner_bias if self.method == 'symmetry' else self.bias
+                penalty=3.0 * self.base_inner_bias if self.method == 'symmetry' else self.bias,
+                accumulation        =True
             )
     
     def calculateTriPlaneForPillar(self, base_height=0, upper_height=None):

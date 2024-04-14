@@ -22,6 +22,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             "output_bc": True,
             "board_bias" : 1.4,
             "connection_angle": 0,
+            "middle_bias": 0.1,
             "enable_db": False,
             "enable_db_bind": False,
             "additional_line_option": 0,
@@ -34,7 +35,9 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             "tsa_resolution": 72,
             "debug_mode": False,
             "thin_mode": False,
-            "layer": 3
+            "layer": 3,
+            "asym": False,
+            "only_two_sides": False
         }
 
         self.limitation = {
@@ -49,7 +52,12 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             "discrete_resolution": 2,
             "hypar_enable": True,
             "direction_enable": False,
-            "mcts_epoch": 100
+            "mcts_epoch": 100,
+            "exo_angle1": 90.0,
+            "exo_angle2": 180.0,
+            "exo_X": 0.0,
+            "exo_Y": 0.0,
+            "exo_theta": 0.0
         }
 
         self.ok = False
@@ -114,6 +122,12 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.checkBox_thin_mode.setChecked(self.pref_pack["thin_mode"])
         #36
         self.spinBox_layer.setValue(self.pref_pack["layer"])
+        #37
+        self.doubleSpinBox_middle_bias.setValue(self.pref_pack["middle_bias"])
+        #38
+        self.checkBox_asymmetric.setChecked(self.pref_pack["asym"])
+        #39
+        self.checkBox_onl_two_side.setChecked(self.pref_pack["only_two_sides"])
         #4 We need to know which mode is
         cursor_axis_mode = self.pref_pack["cursor_axis_mode"]
         if cursor_axis_mode == "pixel_axis":
@@ -161,14 +175,22 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             self.radioButton_bestmatch.setChecked(True)
             self.radioButton_strict_match.setChecked(False)
             self.radioButton_discretematch.setChecked(False)
+            self.radioButton_exomatch.setChecked(False)
         elif self.limitation["match_mode"] == 1:
             self.radioButton_bestmatch.setChecked(False)
             self.radioButton_strict_match.setChecked(True)
             self.radioButton_discretematch.setChecked(False)
-        else:
+            self.radioButton_exomatch.setChecked(False)
+        elif self.limitation["match_mode"] == 2:
             self.radioButton_bestmatch.setChecked(False)
             self.radioButton_strict_match.setChecked(False)
             self.radioButton_discretematch.setChecked(True)
+            self.radioButton_exomatch.setChecked(False)
+        else:
+            self.radioButton_bestmatch.setChecked(False)
+            self.radioButton_strict_match.setChecked(False)
+            self.radioButton_discretematch.setChecked(False)
+            self.radioButton_exomatch.setChecked(True)
         #9
         self.spinBox_discrete_resolution.setValue(self.limitation["discrete_resolution"])
         #10
@@ -177,6 +199,16 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.checkBox_direction_enable_2.setChecked(self.limitation["direction_enable"])
         #12
         self.spinBox_mcts_epoch.setValue(self.limitation["mcts_epoch"])
+        #13
+        self.doubleSpinBox_exo_angle_1.setValue(self.limitation["exo_angle1"])
+        #14
+        self.doubleSpinBox_exo_angle_2.setValue(self.limitation["exo_angle2"])
+        #15
+        self.doubleSpinBox_state2_X.setValue(self.limitation["exo_X"])
+        #16
+        self.doubleSpinBox_state2_Y.setValue(self.limitation["exo_Y"])
+        #17
+        self.doubleSpinBox_state2_dir.setValue(self.limitation["exo_theta"])
 
     def saveDataFromUi(self):
         """
@@ -214,6 +246,12 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.pref_pack["thin_mode"] = self.checkBox_thin_mode.isChecked()
         #36
         self.pref_pack["layer"] = self.spinBox_layer.value()
+        #37
+        self.pref_pack["middle_bias"] = self.doubleSpinBox_middle_bias.value()
+        #38
+        self.pref_pack["asym"] = self.checkBox_asymmetric.isChecked()
+        #39
+        self.pref_pack["only_two_sides"] = self.checkBox_onl_two_side.isChecked()
         #4 We need to know which radio button is checked
         cursor_axis_mode = ""
         if self.radioButton_pixel_axis.isChecked():
@@ -266,6 +304,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             self.limitation["match_mode"] = 1
         elif self.radioButton_discretematch.isChecked():
             self.limitation["match_mode"] = 2
+        elif self.radioButton_exomatch.isChecked():
+            self.limitation["match_mode"] = 3
         #9
         self.limitation["discrete_resolution"] = self.spinBox_discrete_resolution.value()
         #10
@@ -274,6 +314,16 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.limitation["direction_enable"] = self.checkBox_direction_enable_2.isChecked()
         #12
         self.limitation["mcts_epoch"] = self.spinBox_mcts_epoch.value()
+        #13
+        self.limitation["exo_angle1"] = self.doubleSpinBox_exo_angle_1.value()
+        #14
+        self.limitation["exo_angle2"] = self.doubleSpinBox_exo_angle_2.value()
+        #15
+        self.limitation["exo_X"] = self.doubleSpinBox_state2_X.value()
+        #16
+        self.limitation["exo_Y"] = self.doubleSpinBox_state2_Y.value()
+        #17
+        self.limitation["exo_theta"] = self.doubleSpinBox_state2_dir.value()
 
     def saveFile(self):
         """
@@ -293,7 +343,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             if key == "generation":
                 break
             s += "[" + key + "] = [" + str(self.limitation[key][0]) + ', ' + str(self.limitation[key][1]) + ']\n'   
-        for ele in ["generation", "batch_size", "process_number", "storage", "match_mode", "discrete_resolution", "hypar_enable", "direction_enable", "mcts_epoch"]:
+        for ele in ["generation", "batch_size", "process_number", "storage", "match_mode", "discrete_resolution", 
+                    "hypar_enable", "direction_enable", "mcts_epoch", "exo_angle1", "exo_angle2", "exo_X", "exo_Y", "exo_theta"]:
             s += "[" + ele + "] = " + str(self.limitation[ele]) + '\n'
 
         with open(file_path, 'w', encoding="utf-8") as f:
@@ -318,24 +369,16 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                     head = segment[0][1: -1]
                     content = segment[-1][0: -1]
                     if head not in [
-                        "print_accuracy", "split_distance", "output_bc", "board_bias", 
-                        "connection_angle", "enable_db", "enable_db_bind", "additional_line_option", "stl_asymmetry", "thin_mode", "layer",
+                        "print_accuracy", "split_distance", "output_bc", "board_bias", "asym", "only_two_sides"
+                        "connection_angle", "enable_db", "enable_db_bind", "additional_line_option", "stl_asymmetry", "thin_mode", "layer", "middle_bias", 
                         "cursor_axis_mode", "line_weight", "show_keypoint", "theme", "tsa_radius", "tsa_resolution",
                         "unit_length", "miura_angle", "row_number", "generation", 
                         "batch_size", "process_number", "storage", "match_mode", "discrete_resolution",
-                        "hypar_enable", "direction_enable", "debug_mode", "mcts_epoch"
+                        "hypar_enable", "direction_enable", "debug_mode", "mcts_epoch", "exo_angle1", "exo_angle2", "exo_X", "exo_Y", "exo_theta"
                     ]:
                         raise TypeError
                     #1
-                    if head == "print_accuracy":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = float(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #11
-                    if head == "split_distance":
+                    if head in ["print_accuracy", "split_distance", "board_bias", "connection_angle", "middle_bias", "tsa_radius"] :
                         ans = re.findall(r"\d+\.?\d*", content)
                         if len(ans) == 1:
                             self.pref_pack[head] = float(ans[0])
@@ -343,43 +386,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                         else:
                             raise TypeError
                     #2
-                    elif head == "output_bc":
-                        if content == "True":
-                            self.pref_pack[head] = True
-                            continue
-                        elif content == "False":
-                            self.pref_pack[head] = False
-                            continue
-                        else:
-                            raise TypeError
-                    #3
-                    elif head == "board_bias":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = float(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #31
-                    elif head == "connection_angle":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = float(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #32
-                    elif head == "enable_db":
-                        if content == "True":
-                            self.pref_pack[head] = True
-                            continue
-                        elif content == "False":
-                            self.pref_pack[head] = False
-                            continue
-                        else:
-                            raise TypeError
-                    #321
-                    elif head == "enable_db_bind":
+                    elif head in ["output_bc", "enable_db", "enable_db_bind", "stl_asymmetry", "thin_mode", "show_keypoint", "debug_mode", "asym", "only_two_sides"]:
                         if content == "True":
                             self.pref_pack[head] = True
                             continue
@@ -389,35 +396,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                         else:
                             raise TypeError
                     #33
-                    elif head == "additional_line_option":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #34
-                    elif head == "stl_asymmetry":
-                        if content == "True":
-                            self.pref_pack[head] = True
-                            continue
-                        elif content == "False":
-                            self.pref_pack[head] = False
-                            continue
-                        else:
-                            raise TypeError
-                    #35
-                    elif head == "thin_mode":
-                        if content == "True":
-                            self.pref_pack[head] = True
-                            continue
-                        elif content == "False":
-                            self.pref_pack[head] = False
-                            continue
-                        else:
-                            raise TypeError
-                    #36
-                    elif head == "layer":
+                    elif head in ["additional_line_option", "layer", "line_weight", "theme", "tsa_resolution"]:
                         ans = re.findall(r"\d+\.?\d*", content)
                         if len(ans) == 1:
                             self.pref_pack[head] = int(ans[0])
@@ -427,77 +406,10 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                     #4
                     elif head == "cursor_axis_mode":
                         self.pref_pack[head] = content
-                    #5
-                    elif head == "line_weight":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #6
-                    elif head == "show_keypoint":
-                        if content == "True":
-                            self.pref_pack[head] = True
-                            continue
-                        elif content == "False":
-                            self.pref_pack[head] = False
-                            continue
-                        else:
-                            raise TypeError
-                    #7
-                    elif head == "theme":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #8
-                    elif head == "tsa_radius":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = float(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #9
-                    elif head == "tsa_resolution":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.pref_pack[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #10
-                    elif head == "debug_mode":
-                        if content == "True":
-                            self.pref_pack[head] = True
-                            continue
-                        elif content == "False":
-                            self.pref_pack[head] = False
-                            continue
-                        else:
-                            raise TypeError
+
                     #LIMITATION
                     #1
-                    elif head == "unit_length":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 2:
-                            self.limitation[head] = [float(ans[0]), float(ans[1])]
-                            continue
-                        else:
-                            raise TypeError
-                    #2
-                    elif head == "miura_angle":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 2:
-                            self.limitation[head] = [float(ans[0]), float(ans[1])]
-                            continue
-                        else:
-                            raise TypeError
-                    #3
-                    elif head == "row_number":
+                    elif head in ["unit_length", "miura_angle", "row_number"]:
                         ans = re.findall(r"\d+\.?\d*", content)
                         if len(ans) == 2:
                             self.limitation[head] = [float(ans[0]), float(ans[1])]
@@ -505,47 +417,15 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                         else:
                             raise TypeError
                     #4
-                    elif head == "generation":
-                        ans = re.findall(r"\d+\.?\d*", content)
+                    elif head in ["exo_angle1", "exo_angle2", "exo_X", "exo_Y", "exo_theta"]:
+                        ans = re.findall(r"-?\d+\.?\d*", content)
                         if len(ans) == 1:
-                            self.limitation[head] = int(ans[0])
+                            self.limitation[head] = float(ans[0])
                             continue
                         else:
                             raise TypeError
-                    #5
-                    elif head == "batch_size":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.limitation[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #6
-                    elif head == "process_number":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.limitation[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #7
-                    elif head == "storage":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.limitation[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #8
-                    elif head == "match_mode":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.limitation[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
-                    #9
-                    elif head == "discrete_resolution":
+                    #4
+                    elif head in ["generation", "batch_size", "process_number", "storage", "match_mode", "discrete_resolution", "mcts_epoch"]:
                         ans = re.findall(r"\d+\.?\d*", content)
                         if len(ans) == 1:
                             self.limitation[head] = int(ans[0])
@@ -553,7 +433,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                         else:
                             raise TypeError
                     #10
-                    elif head == "hypar_enable":
+                    elif head in ["hypar_enable", "direction_enable"]:
                         if content == "True":
                             self.limitation[head] = True
                             continue
@@ -562,24 +442,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                             continue
                         else:
                             raise TypeError
-                    #11
-                    elif head == "direction_enable":
-                        if content == "True":
-                            self.limitation[head] = True
-                            continue
-                        elif content == "False":
-                            self.limitation[head] = False
-                            continue
-                        else:
-                            raise TypeError
-                    #12
-                    elif head == "mcts_epoch":
-                        ans = re.findall(r"\d+\.?\d*", content)
-                        if len(ans) == 1:
-                            self.limitation[head] = int(ans[0])
-                            continue
-                        else:
-                            raise TypeError
+
         except:
             # No log file exists, we will create one
             self.saveFile()

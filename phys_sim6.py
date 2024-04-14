@@ -238,6 +238,7 @@ class OrigamiSimulator:
 
         self.crease_folding_angle = ti.field(dtype=data_type, shape=self.crease_pairs_num) #折痕折角
         self.crease_folding_accumulate = ti.field(dtype=data_type, shape=self.crease_pairs_num) #补偿折角
+        self.bending_pairs_area = ti.field(dtype=data_type, shape=(self.bending_pairs_num, 2)) #弯曲对面积信息
 
         self.crease_type = ti.field(dtype=int, shape=self.crease_pairs_num) #折痕类型信息，与折痕对一一对应
         self.crease_level = ti.field(dtype=int, shape=self.crease_pairs_num)
@@ -349,9 +350,12 @@ class OrigamiSimulator:
         if self.facet_bending_pairs_num > 0:
             self.facet_bending_pairs = ti.field(dtype=int, shape=(self.facet_bending_pairs_num, 2))
             self.facet_crease_pairs = ti.field(dtype=int, shape=(self.facet_crease_pairs_num, 2))
+            self.facet_bending_pairs_area = ti.field(dtype=data_type, shape=(self.facet_bending_pairs_num, 2)) #弯曲对面积信息
+
         else:
             self.facet_bending_pairs = ti.field(dtype=int, shape=(1, 2))
             self.facet_crease_pairs = ti.field(dtype=int, shape=(1, 2))
+            self.facet_bending_pairs_area = ti.field(dtype=data_type, shape=(1, 2)) #弯曲对面积信息
         
         #----simulator information----#
         self.x = ti.Vector.field(3, dtype=data_type, shape=self.kp_num) #点的位置
@@ -567,6 +571,19 @@ class OrigamiSimulator:
         for i, j in ti.ndrange(self.bending_pairs_num, 2):
             self.bending_pairs[i, j] = bending_pairs[i, j]
             self.crease_pairs[i, j] = crease_pairs[i, j]
+
+        for i in ti.ndrange(self.bending_pairs_num):
+            # 初始化弯曲对和折痕对的面积
+            cs = self.original_vertices[self.crease_pairs[i, 0]]
+            ce = self.original_vertices[self.crease_pairs[i, 1]]
+            p1 = self.original_vertices[self.bending_pairs[i, 0]]
+            p2 = self.original_vertices[self.bending_pairs[i, 1]]
+            a1 = ((ce - cs).cross(p1 - cs)).norm()
+            a2 = ((p2 - cs).cross(ce - cs)).norm()
+            # assert a1 > 0 and a2 > 0
+            self.bending_pairs_area[i, 0] = a1
+            self.bending_pairs_area[i, 1] = a2
+
         # 初始化线段对
         for i, j in ti.ndrange(self.line_total_indice_num, 2):
             self.line_pairs[i, j] = line_indices[i, j]
@@ -574,6 +591,19 @@ class OrigamiSimulator:
         for i, j in ti.ndrange(self.facet_bending_pairs_num, 2):
             self.facet_bending_pairs[i, j] = facet_bending_pairs[i, j]
             self.facet_crease_pairs[i, j] = facet_crease_pairs[i, j]
+            # 初始化弯曲对和折痕对的面积
+
+        for i in ti.ndrange(self.facet_bending_pairs_num):
+            cs = self.original_vertices[self.facet_crease_pairs[i, 0]]
+            ce = self.original_vertices[self.facet_crease_pairs[i, 1]]
+            p1 = self.original_vertices[self.facet_bending_pairs[i, 0]]
+            p2 = self.original_vertices[self.facet_bending_pairs[i, 1]]
+            a1 = ((ce - cs).cross(p1 - cs)).norm()
+            a2 = ((p2 - cs).cross(ce - cs)).norm()
+            # assert a1 > 0 and a2 > 0
+            self.facet_bending_pairs_area[i, 0] = a1
+            self.facet_bending_pairs_area[i, 1] = a2
+
         #初始化折痕折角
         for i in ti.ndrange(self.crease_pairs_num):
             self.crease_folding_angle[i] = 0.0
@@ -795,7 +825,102 @@ class OrigamiSimulator:
             self.line_vertex[2 * i + 1] = self.vertices[indice2]
 
     @ti.func
-    def getBendingForce(self, cs, ce, p1, p2, k, theta, crease_type, debug=False, enable_dynamic_change=False, index=-1):
+    def getBendingForce(self, cs, ce, p1, p2, k, theta, crease_type, debug=False, enable_dynamic_change=False, a1=1., a2=1.):
+        # # 求折痕的信息
+        # xc = ce - cs
+        # xc_norm = xc.norm()
+
+        # # 求单元法向量
+        # f11 = p1 - cs
+        # f22 = p2 - cs
+        # n1 = xc.cross(f11)
+        # n2 = f22.cross(xc)
+
+        # # 求2倍单元面积
+        # a1 = n1.norm()
+        # a2 = n2.norm()
+
+        # # 法向量归一化
+        # un1 = tm.normalize(n1)
+        # un2 = tm.normalize(n2)
+        # uxc = tm.normalize(xc)
+
+        # dir = un1.cross(un2).dot(uxc)
+
+        # val = un1.dot(un2)
+
+        # if val > 1.0:
+        #     val = 1.0
+        # elif val < -1.0:
+        #     val = -1.0
+
+        # n_value = 0.
+        # # 求折叠角
+        # if not enable_dynamic_change:
+        #     if crease_type == MOUNTAIN:
+        #         if dir >= 0.:
+        #             n_value = tm.cos(theta) - val
+        #         elif dir <= 0.:
+        #             if val <= -0.5: # 180~270
+        #                 n_value = tm.cos(theta) + val + 2.
+        #             else:
+        #                 n_value = tm.cos(theta) + val - 2.
+        #     else:
+        #         if dir <= 0.:
+        #             n_value = val - tm.cos(theta)
+        #         else:
+        #             if val <= -0.5:
+        #                 n_value = -2. - val - tm.cos(theta)
+        #             else:
+        #                 n_value = 2. - val - tm.cos(theta)                 
+        # else:
+        #     # if index == -1: # facet crease
+        #     if dir >= 0.:
+        #         n_value = tm.cos(theta) - val
+        #     else:
+        #         n_value = val - tm.cos(theta)
+        # # if index != -1:
+        # #     self.crease_folding_angle[index] = current_folding_angle
+        
+        # # if index == 2:
+        # #     print(f11, f12, n2, val, dir, current_folding_angle)
+
+        # # 求折叠角与目标之差
+        # if abs(val + 1.) <= 0.015:
+        #     self.folding_angle_reach_pi[0] = True
+
+        # # delta_folding_angle = current_folding_angle - theta
+        # # if debug:
+        # #     print(x0, p1, dir, current_folding_angle)
+
+        # # 计算折痕等效弯曲系数
+        # # k_crease = k * xc_norm if abs(current_folding_angle) < tm.pi else k * xc_norm * tm.exp(current_folding_angle)
+        # k_crease = k * xc_norm
+
+        # # 计算力矩，谷折痕折叠角大于0
+
+        # # print(n_value)
+        # h1 = a1 / xc_norm
+        # h2 = a2 / xc_norm
+        # rpf1 = k_crease * n_value / h1 * un1
+        # rpf2 = k_crease * n_value / h2 * un2
+        
+        # t1 = f11.dot(xc) / (xc_norm ** 2)
+        # t2 = f22.dot(xc) / (xc_norm ** 2)
+
+        # csf = - (1 - t1) * rpf1 - (1 - t2) * rpf2
+        # cef = -t1 * rpf1 - t2 * rpf2
+
+        # # self.bending_params[0] = -k_crease * delta_folding_angle / h1 / a1
+        # # self.bending_params[1] = -k_crease * delta_folding_angle / h2 / a2
+        # # self.bending_params[2] = t1
+        # # self.bending_params[3] = t2
+
+        # #计算能量
+        # # energy = 0.5 * k_crease * delta_folding_angle ** 2 if abs(current_folding_angle) < tm.pi else 0.5 * k_crease * delta_folding_angle ** 2 * tm.exp(current_folding_angle)
+        # energy = 0.5 * k_crease * n_value ** 2
+
+        # return csf, cef, rpf1, rpf2, energy, n_value
         # 求折痕的信息
         xc = ce - cs
         xc_norm = xc.norm()
@@ -808,50 +933,56 @@ class OrigamiSimulator:
         self.n1[0] = n1
         self.n2[0] = n2
 
-        # 求2倍单元面积
-        a1 = n1.norm()
-        a2 = n2.norm()
+        # # 求2倍单元面积
+        # a1 = a1
+        # a2 = n2.norm()
 
-        # 法向量归一化
-        un1 = tm.normalize(n1)
-        un2 = tm.normalize(n2)
-        uxc = tm.normalize(xc)
+        # # 法向量归一化
+        # un1 = tm.normalize(n1)
+        # un2 = tm.normalize(n2)
+        # uxc = tm.normalize(xc)
 
-        dir = un1.cross(un2).dot(uxc)
+        dir = n1.cross(n2).dot(xc)
 
-        val = un1.dot(un2)
+        val = n1.dot(n2)
 
-        if val > 1.0:
-            val = 1.0
-        elif val < -1.0:
-            val = -1.0
+        norm_val = val / n1.norm() / n2.norm()
+
+        if norm_val > 1.0:
+            val = n1.norm() * n2.norm()
+            norm_val = 1.0
+        elif norm_val < -1.0:
+            val = -n1.norm() * n2.norm()
+            norm_val = -1.0
 
         n_value = 0.
+
+        target_theta = n1.norm() * n2.norm() * tm.cos(theta)
         # 求折叠角
         if not enable_dynamic_change:
-            if index == -1:
-                if crease_type == MOUNTAIN:
-                    if dir >= 0.:
-                        n_value = tm.cos(theta) - val
-                    else:
-                        if val <= -0.5: # 180~270
-                            n_value = tm.cos(theta) + val + 2.
-                        else:
-                            n_value = tm.cos(theta) + val - 2.
+            # if index == -1:
+            if crease_type == MOUNTAIN:
+                if dir >= 0.:
+                    n_value = target_theta - val
                 else:
-                    if dir <= 0.:
-                        n_value = val - tm.cos(theta)
+                    if val <= -0.5 * n1.norm() * n2.norm(): # 180~270
+                        n_value = target_theta + val + 2. * n1.norm() * n2.norm()
                     else:
-                        if val <= -0.5:
-                            n_value = -2. - val - tm.cos(theta)
-                        else:
-                            n_value = 2. - val - tm.cos(theta)                 
+                        n_value = target_theta + val - 2. * n1.norm() * n2.norm()
+            else:
+                if dir <= 0.:
+                    n_value = val - target_theta
+                else:
+                    if val <= -0.5 * n1.norm() * n2.norm():
+                        n_value = -2. * n1.norm() * n2.norm() - val - target_theta
+                    else:
+                        n_value = 2. * n1.norm() * n2.norm() - val - target_theta               
         else:
             # if index == -1: # facet crease
             if dir >= 0.:
-                n_value = tm.cos(theta) - val
+                n_value = target_theta - val
             else:
-                n_value = val - tm.cos(theta)
+                n_value = val - target_theta
         # if index != -1:
         #     self.crease_folding_angle[index] = current_folding_angle
         
@@ -859,7 +990,7 @@ class OrigamiSimulator:
         #     print(f11, f12, n2, val, dir, current_folding_angle)
 
         # 求折叠角与目标之差
-        if abs(val + 1.) <= 0.015:
+        if abs(norm_val + 1.) <= 0.015:
             self.folding_angle_reach_pi[0] = True
 
         # delta_folding_angle = current_folding_angle - theta
@@ -868,13 +999,13 @@ class OrigamiSimulator:
 
         # 计算折痕等效弯曲系数
         # k_crease = k * xc_norm if abs(current_folding_angle) < tm.pi else k * xc_norm * tm.exp(current_folding_angle)
-        k_crease = k * xc_norm
+        k_crease = k * xc_norm / a1 / a2
 
         # 计算力矩，谷折痕折叠角大于0
-        h1 = a1 / xc_norm
-        h2 = a2 / xc_norm
-        rpf1 = k_crease * n_value / h1 * un1
-        rpf2 = k_crease * n_value / h2 * un2
+        h1 = n1.norm() / xc_norm
+        h2 = n2.norm() / xc_norm
+        rpf1 = k_crease * n_value / h1 * n1 / a1
+        rpf2 = k_crease * n_value / h2 * n2 / a2
         
         t1 = f11.dot(xc) / (xc_norm ** 2)
         t2 = f22.dot(xc) / (xc_norm ** 2)
@@ -882,17 +1013,15 @@ class OrigamiSimulator:
         csf = -((1 - t1) * rpf1 + (1 - t2) * rpf2)
         cef = -(     t1  * rpf1 +      t2  * rpf2)
 
-        self.bending_params[0] = k_crease / (a1 ** 2 * a2) / h1
-        self.bending_params[1] = k_crease / (a1 * a2 ** 2) / h2
+        self.bending_params[0] = k_crease / (a1) / h1
+        self.bending_params[1] = k_crease / (a1) / h2
         self.bending_params[2] = t1
         self.bending_params[3] = t2
-        self.bending_params[4] = a1
-        self.bending_params[5] = a2
-        self.bending_params[6] = dir
+        self.bending_params[4] = dir
 
         #计算能量
         # energy = 0.5 * k_crease * delta_folding_angle ** 2 if abs(current_folding_angle) < tm.pi else 0.5 * k_crease * delta_folding_angle ** 2 * tm.exp(current_folding_angle)
-        energy = 0.5 * k_crease * n_value ** 2
+        energy = 0.5 * k_crease * n_value ** 2 / a1 / a2
 
         return csf, cef, rpf1, rpf2, energy, n_value
 
@@ -1000,6 +1129,9 @@ class OrigamiSimulator:
                 related_p1 = self.bending_pairs[i, 0]
                 related_p2 = self.bending_pairs[i, 1]
 
+                a1 = self.bending_pairs_area[i, 0]
+                a2 = self.bending_pairs_area[i, 1]
+
                 target_folding_angle = 0.0
                 percent_low = (self.sequence_level[0] - self.crease_level[i]) / (self.sequence_level[0] - self.sequence_level[1] + 1.)
                 percent_high = (self.sequence_level[0] - self.crease_level[i] + 1.) / (self.sequence_level[0] - self.sequence_level[1] + 1.)
@@ -1023,7 +1155,7 @@ class OrigamiSimulator:
                     self.get_position_with_index(crease_end_index), 
                     self.get_position_with_index(related_p1), 
                     self.get_position_with_index(related_p2),
-                    self.ori_sim.bending_k, target_folding_angle, self.crease_type[i], False, False, -1)
+                    self.ori_sim.bending_k, target_folding_angle, self.crease_type[i], False, False, a1, a2)
             
                 # self.crease_angle[i] = current_folding_angle
    
@@ -1036,12 +1168,15 @@ class OrigamiSimulator:
                 related_p2 = self.bending_pairs[i, 1]
                 # 计算弯曲力
                 
+                a1 = self.bending_pairs_area[i, 0]
+                a2 = self.bending_pairs_area[i, 1]
+
                 csf, cef, rpf1, rpf2, energy, current_folding_angle = self.getBendingForce(
                     self.get_position_with_index(crease_start_index), 
                     self.get_position_with_index(crease_end_index), 
                     self.get_position_with_index(related_p1), 
                     self.get_position_with_index(related_p2),
-                    self.ori_sim.bending_k, 0.0, 0, False, True, -1)
+                    self.ori_sim.bending_k, 0.0, 0, False, True, a1, a2)
 
                 # self.crease_angle[i] = current_folding_angle
                 total_energy += energy
@@ -1059,13 +1194,16 @@ class OrigamiSimulator:
                 crease_end_index = self.facet_crease_pairs[i, 1]
                 related_p1 = self.facet_bending_pairs[i, 0]
                 related_p2 = self.facet_bending_pairs[i, 1]
+                a1 = self.facet_bending_pairs_area[i, 0]
+                a2 = self.facet_bending_pairs_area[i, 1]
+
                 # 计算弯曲力
                 csf, cef, rpf1, rpf2, energy, _ = self.getBendingForce(
                     self.get_position_with_index(crease_start_index), 
                     self.get_position_with_index(crease_end_index), 
                     self.get_position_with_index(related_p1), 
                     self.get_position_with_index(related_p2), 
-                    facet_k, 0.0, 0, False, True, -1)
+                    facet_k, 0.0, 0, False, True, a1, a2)
 
                 total_energy += energy
         # print(total_energy)
@@ -1195,6 +1333,9 @@ class OrigamiSimulator:
                 related_p1 = self.bending_pairs[i, 0]
                 related_p2 = self.bending_pairs[i, 1]
 
+                a1 = self.bending_pairs_area[i, 0]
+                a2 = self.bending_pairs_area[i, 1]
+
                 target_folding_angle = 0.0
                 percent_low = (self.sequence_level[0] - self.crease_level[i]) / (self.sequence_level[0] - self.sequence_level[1] + 1.)
                 percent_high = (self.sequence_level[0] - self.crease_level[i] + 1.) / (self.sequence_level[0] - self.sequence_level[1] + 1.)
@@ -1222,83 +1363,83 @@ class OrigamiSimulator:
                 # print(x4)
                 # 计算弯曲力
                 csf, cef, rpf1, rpf2, energy, n_value = self.getBendingForce(x1, x3, x4, x2,
-                    self.ori_sim.bending_k, target_folding_angle, self.crease_type[i], False, False, -1)
+                    self.ori_sim.bending_k, target_folding_angle, self.crease_type[i], False, False, a1, a2)
                 # 增加至force
                 self.record_force[crease_start_index] += csf
                 self.record_force[crease_end_index] += cef
                 self.record_force[related_p1] += rpf1
                 self.record_force[related_p2] += rpf2
 
-                self.triplets_bending[i] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
-                # print("triplet_bending: ")
-                # print(self.triplets_bending[0])
-                # print("position: ")
-                # print(x1, x2, x3, x4)
-                C1 = self.bending_params[0]
-                C2 = self.bending_params[1]
-                t1 = self.bending_params[2]
-                t2 = self.bending_params[3]
-                a1 = self.bending_params[4]
-                a2 = self.bending_params[5]
-                A = a1 * a2
-                dir = self.bending_params[6]
-                n1 = self.n1[0]
-                n2 = self.n2[0]
-                df1dn1 = ti.Matrix.zero(data_type, 3, 3)
-                df1dn2 = ti.Matrix.zero(data_type, 3, 3)
-                df2dn1 = ti.Matrix.zero(data_type, 3, 3)
-                df2dn2 = ti.Matrix.zero(data_type, 3, 3)
-                if (self.crease_type[i] == VALLEY):
-                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]))
-                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]))
-                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    # print(df2dn1)
-                else:
-                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n1[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n1[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]))
-                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle)), n2[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle))]))
-                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle)), n2[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle))]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
-                # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
-                dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
-                dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
-                dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
-                # print(dn2dx1)
-                dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
-                dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
-                # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
-                block_rp1_1 = dn1dx1.transpose() @ df1dn1 + dn2dx1.transpose() @ df1dn2
-                block_rp1_2 = dn2dx2.transpose() @ df1dn2
-                block_rp1_3 = dn1dx3.transpose() @ df1dn1 + dn2dx3.transpose() @ df1dn2
-                block_rp1_4 = dn1dx4.transpose() @ df1dn1
-                block_rp2_1 = dn1dx1.transpose() @ df2dn1 + dn2dx1.transpose() @ df2dn2
-                block_rp2_2 = dn2dx2.transpose() @ df2dn2
-                block_rp2_3 = dn1dx3.transpose() @ df2dn1 + dn2dx3.transpose() @ df2dn2
-                block_rp2_4 = dn1dx4.transpose() @ df2dn1
-                for k in range(3, 6):
-                    for j in range(0, 3):
-                        self.K_element_bending[i][j, k] = block_rp2_1[j, k - 3]
-                    for j in range(3, 6):
-                        self.K_element_bending[i][j, k] = block_rp2_2[j - 3, k - 3]
-                    for j in range(6, 9):
-                        self.K_element_bending[i][j, k] = block_rp2_3[j - 6, k - 3]
-                    for j in range(9, 12):
-                        self.K_element_bending[i][j, k] = block_rp2_4[j - 9, k - 3]
-                for k in range(9, 12):
-                    for j in range(0, 3):
-                        self.K_element_bending[i][j, k] = block_rp1_1[j, k - 9]
-                    for j in range(3, 6):
-                        self.K_element_bending[i][j, k] = block_rp1_2[j - 3, k - 9]
-                    for j in range(6, 9):
-                        self.K_element_bending[i][j, k] = block_rp1_3[j - 6, k - 9]
-                    for j in range(9, 12):
-                        self.K_element_bending[i][j, k] = block_rp1_4[j - 9, k - 9]
-                for k in range(0, 3):
-                    for j in range(12):
-                        self.K_element_bending[i][j, k    ] = -((1 - t1) * self.K_element_bending[i][j, k + 9] + (1 - t2) * self.K_element_bending[i][j, k + 3])
-                        self.K_element_bending[i][j, k + 6] = -(     t1  * self.K_element_bending[i][j, k + 9] +      t2  * self.K_element_bending[i][j, k + 3])
-                self.K_element_bending[i] = self.K_element_bending[i].transpose()
+                # self.triplets_bending[i] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
+                # # print("triplet_bending: ")
+                # # print(self.triplets_bending[0])
+                # # print("position: ")
+                # # print(x1, x2, x3, x4)
+                # C1 = self.bending_params[0]
+                # C2 = self.bending_params[1]
+                # t1 = self.bending_params[2]
+                # t2 = self.bending_params[3]
+                # a1 = self.bending_params[4]
+                # a2 = self.bending_params[5]
+                # A = a1 * a2
+                # dir = self.bending_params[6]
+                # n1 = self.n1[0]
+                # n2 = self.n2[0]
+                # df1dn1 = ti.Matrix.zero(data_type, 3, 3)
+                # df1dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # df2dn1 = ti.Matrix.zero(data_type, 3, 3)
+                # df2dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # if (self.crease_type[i] == VALLEY):
+                #     df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - 2 * n_value * a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - 2 * n_value * a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - 2 * n_value * a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - n_value * a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1), n1[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1)]))
+                #     df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - 2 * n_value * a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - 2 * n_value * a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - 2 * n_value * a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     # print(df2dn1)
+                # else:
+                #     df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - 2 * n_value * a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - 2 * n_value * a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - 2 * n_value * a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - n_value * a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1), n1[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1)]))
+                #     df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1 * tm.cos(target_folding_angle) - n_value * a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - 2 * n_value * a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - 2 * n_value * a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2 * tm.cos(target_folding_angle) - 2 * n_value * a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
+                # # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
+                # dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
+                # dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
+                # dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
+                # # print(dn2dx1)
+                # dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
+                # dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
+                # # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
+                # block_rp1_1 = dn1dx1.transpose() @ df1dn1 + dn2dx1.transpose() @ df1dn2
+                # block_rp1_2 = dn2dx2.transpose() @ df1dn2
+                # block_rp1_3 = dn1dx3.transpose() @ df1dn1 + dn2dx3.transpose() @ df1dn2
+                # block_rp1_4 = dn1dx4.transpose() @ df1dn1
+                # block_rp2_1 = dn1dx1.transpose() @ df2dn1 + dn2dx1.transpose() @ df2dn2
+                # block_rp2_2 = dn2dx2.transpose() @ df2dn2
+                # block_rp2_3 = dn1dx3.transpose() @ df2dn1 + dn2dx3.transpose() @ df2dn2
+                # block_rp2_4 = dn1dx4.transpose() @ df2dn1
+                # for k in range(3, 6):
+                #     for j in range(0, 3):
+                #         self.K_element_bending[i][j, k] = block_rp2_1[j, k - 3]
+                #     for j in range(3, 6):
+                #         self.K_element_bending[i][j, k] = block_rp2_2[j - 3, k - 3]
+                #     for j in range(6, 9):
+                #         self.K_element_bending[i][j, k] = block_rp2_3[j - 6, k - 3]
+                #     for j in range(9, 12):
+                #         self.K_element_bending[i][j, k] = block_rp2_4[j - 9, k - 3]
+                # for k in range(9, 12):
+                #     for j in range(0, 3):
+                #         self.K_element_bending[i][j, k] = block_rp1_1[j, k - 9]
+                #     for j in range(3, 6):
+                #         self.K_element_bending[i][j, k] = block_rp1_2[j - 3, k - 9]
+                #     for j in range(6, 9):
+                #         self.K_element_bending[i][j, k] = block_rp1_3[j - 6, k - 9]
+                #     for j in range(9, 12):
+                #         self.K_element_bending[i][j, k] = block_rp1_4[j - 9, k - 9]
+                # for k in range(0, 3):
+                #     for j in range(12):
+                #         self.K_element_bending[i][j, k    ] = -((1 - t1) * self.K_element_bending[i][j, k + 9] + (1 - t2) * self.K_element_bending[i][j, k + 3])
+                #         self.K_element_bending[i][j, k + 6] = -(     t1  * self.K_element_bending[i][j, k + 9] +      t2  * self.K_element_bending[i][j, k + 3])
+                # self.K_element_bending[i] = self.K_element_bending[i].transpose()
                 self.crease_angle[i] = n_value
                 self.total_energy[0] += energy
         else:
@@ -1308,6 +1449,9 @@ class OrigamiSimulator:
                 related_p1 = self.bending_pairs[i, 0]
                 related_p2 = self.bending_pairs[i, 1]
                 # 计算弯曲力
+
+                a1 = self.bending_pairs_area[i, 0]
+                a2 = self.bending_pairs_area[i, 1]
                 
                 x1 = self.get_position_with_index(crease_start_index)
                 x2 = self.get_position_with_index(related_p2)
@@ -1315,83 +1459,83 @@ class OrigamiSimulator:
                 x4 = self.get_position_with_index(related_p1)
                 # 计算弯曲力
                 csf, cef, rpf1, rpf2, energy, n_value = self.getBendingForce(x1, x3, x4, x2,
-                    self.ori_sim.bending_k, 0.0, 0, False, True, -1)
+                    self.ori_sim.bending_k, 0.0, 0, False, True, a1, a2)
                 # 增加至force
                 self.record_force[crease_start_index] += csf
                 self.record_force[crease_end_index] += cef
                 self.record_force[related_p1] += rpf1
                 self.record_force[related_p2] += rpf2
             
-                self.triplets_bending[i] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
-                # print("triplet_bending: ")
-                # print(self.triplets_bending[0])
-                # print("position: ")
-                # print(x1, x2, x3, x4)
-                C1 = self.bending_params[0]
-                C2 = self.bending_params[1]
-                t1 = self.bending_params[2]
-                t2 = self.bending_params[3]
-                a1 = self.bending_params[4]
-                a2 = self.bending_params[5]
-                A = a1 * a2
-                dir = self.bending_params[6]
-                n1 = self.n1[0]
-                n2 = self.n2[0]
-                df1dn1 = ti.Matrix.zero(data_type, 3, 3)
-                df1dn2 = ti.Matrix.zero(data_type, 3, 3)
-                df2dn1 = ti.Matrix.zero(data_type, 3, 3)
-                df2dn2 = ti.Matrix.zero(data_type, 3, 3)
-                if (self.crease_type[i] == VALLEY):
-                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
-                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
-                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    # print(df2dn1)
-                else:
-                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
-                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
-                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
-                # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
-                dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
-                dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
-                dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
-                # print(dn2dx1)
-                dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
-                dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
-                # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
-                block_rp1_1 = dn1dx1.transpose() @ df1dn1 + dn2dx1.transpose() @ df1dn2
-                block_rp1_2 = dn2dx2.transpose() @ df1dn2
-                block_rp1_3 = dn1dx3.transpose() @ df1dn1 + dn2dx3.transpose() @ df1dn2
-                block_rp1_4 = dn1dx4.transpose() @ df1dn1
-                block_rp2_1 = dn1dx1.transpose() @ df2dn1 + dn2dx1.transpose() @ df2dn2
-                block_rp2_2 = dn2dx2.transpose() @ df2dn2
-                block_rp2_3 = dn1dx3.transpose() @ df2dn1 + dn2dx3.transpose() @ df2dn2
-                block_rp2_4 = dn1dx4.transpose() @ df2dn1
-                for k in range(3, 6):
-                    for j in range(0, 3):
-                        self.K_element_bending[i][j, k] = block_rp2_1[j, k - 3]
-                    for j in range(3, 6):
-                        self.K_element_bending[i][j, k] = block_rp2_2[j - 3, k - 3]
-                    for j in range(6, 9):
-                        self.K_element_bending[i][j, k] = block_rp2_3[j - 6, k - 3]
-                    for j in range(9, 12):
-                        self.K_element_bending[i][j, k] = block_rp2_4[j - 9, k - 3]
-                for k in range(9, 12):
-                    for j in range(0, 3):
-                        self.K_element_bending[i][j, k] = block_rp1_1[j, k - 9]
-                    for j in range(3, 6):
-                        self.K_element_bending[i][j, k] = block_rp1_2[j - 3, k - 9]
-                    for j in range(6, 9):
-                        self.K_element_bending[i][j, k] = block_rp1_3[j - 6, k - 9]
-                    for j in range(9, 12):
-                        self.K_element_bending[i][j, k] = block_rp1_4[j - 9, k - 9]
-                for k in range(0, 3):
-                    for j in range(12):
-                        self.K_element_bending[i][j, k    ] = -((1 - t1) * self.K_element_bending[i][j, k + 9] + (1 - t2) * self.K_element_bending[i][j, k + 3])
-                        self.K_element_bending[i][j, k + 6] = -(     t1  * self.K_element_bending[i][j, k + 9] +      t2  * self.K_element_bending[i][j, k + 3])
-                self.K_element_bending[i] = self.K_element_bending[i].transpose()
+                # self.triplets_bending[i] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
+                # # print("triplet_bending: ")
+                # # print(self.triplets_bending[0])
+                # # print("position: ")
+                # # print(x1, x2, x3, x4)
+                # C1 = self.bending_params[0]
+                # C2 = self.bending_params[1]
+                # t1 = self.bending_params[2]
+                # t2 = self.bending_params[3]
+                # a1 = self.bending_params[4]
+                # a2 = self.bending_params[5]
+                # A = a1 * a2
+                # dir = self.bending_params[6]
+                # n1 = self.n1[0]
+                # n2 = self.n2[0]
+                # df1dn1 = ti.Matrix.zero(data_type, 3, 3)
+                # df1dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # df2dn1 = ti.Matrix.zero(data_type, 3, 3)
+                # df2dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # if (self.crease_type[i] == VALLEY):
+                #     df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 - n_value * a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1), n1[Z] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1)]))
+                #     df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     # print(df2dn1)
+                # else:
+                #     df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 - n_value * a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1), n1[Z] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1)]))
+                #     df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
+                # # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
+                # dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
+                # dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
+                # dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
+                # # print(dn2dx1)
+                # dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
+                # dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
+                # # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
+                # block_rp1_1 = dn1dx1.transpose() @ df1dn1 + dn2dx1.transpose() @ df1dn2
+                # block_rp1_2 = dn2dx2.transpose() @ df1dn2
+                # block_rp1_3 = dn1dx3.transpose() @ df1dn1 + dn2dx3.transpose() @ df1dn2
+                # block_rp1_4 = dn1dx4.transpose() @ df1dn1
+                # block_rp2_1 = dn1dx1.transpose() @ df2dn1 + dn2dx1.transpose() @ df2dn2
+                # block_rp2_2 = dn2dx2.transpose() @ df2dn2
+                # block_rp2_3 = dn1dx3.transpose() @ df2dn1 + dn2dx3.transpose() @ df2dn2
+                # block_rp2_4 = dn1dx4.transpose() @ df2dn1
+                # for k in range(3, 6):
+                #     for j in range(0, 3):
+                #         self.K_element_bending[i][j, k] = block_rp2_1[j, k - 3]
+                #     for j in range(3, 6):
+                #         self.K_element_bending[i][j, k] = block_rp2_2[j - 3, k - 3]
+                #     for j in range(6, 9):
+                #         self.K_element_bending[i][j, k] = block_rp2_3[j - 6, k - 3]
+                #     for j in range(9, 12):
+                #         self.K_element_bending[i][j, k] = block_rp2_4[j - 9, k - 3]
+                # for k in range(9, 12):
+                #     for j in range(0, 3):
+                #         self.K_element_bending[i][j, k] = block_rp1_1[j, k - 9]
+                #     for j in range(3, 6):
+                #         self.K_element_bending[i][j, k] = block_rp1_2[j - 3, k - 9]
+                #     for j in range(6, 9):
+                #         self.K_element_bending[i][j, k] = block_rp1_3[j - 6, k - 9]
+                #     for j in range(9, 12):
+                #         self.K_element_bending[i][j, k] = block_rp1_4[j - 9, k - 9]
+                # for k in range(0, 3):
+                #     for j in range(12):
+                #         self.K_element_bending[i][j, k    ] = -((1 - t1) * self.K_element_bending[i][j, k + 9] + (1 - t2) * self.K_element_bending[i][j, k + 3])
+                #         self.K_element_bending[i][j, k + 6] = -(     t1  * self.K_element_bending[i][j, k + 9] +      t2  * self.K_element_bending[i][j, k + 3])
+                # self.K_element_bending[i] = self.K_element_bending[i].transpose()
                 self.crease_angle[i] = n_value
                 self.total_energy[0] += energy
             
@@ -1426,93 +1570,97 @@ class OrigamiSimulator:
                 x2 = self.get_position_with_index(related_p2)
                 x3 = self.get_position_with_index(crease_end_index)
                 x4 = self.get_position_with_index(related_p1)
+
+                a1 = self.facet_bending_pairs_area[i, 0]
+                a2 = self.facet_bending_pairs_area[i, 1]
+
                 # 计算弯曲力
                 csf, cef, rpf1, rpf2, energy, n_value = self.getBendingForce(x1, x3, x4, x2,
-                    facet_k, 0.0, 0, False, True, -1)
+                    facet_k, 0.0, 0, False, True, a1, a2)
                 # 增加至force
                 self.record_force[crease_start_index] += csf
                 self.record_force[crease_end_index] += cef
                 self.record_force[related_p1] += rpf1
                 self.record_force[related_p2] += rpf2
 
-                index = i + self.crease_pairs_num
-                self.triplets_bending[index] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
-                C1 = self.bending_params[0]
-                C2 = self.bending_params[1]
-                t1 = self.bending_params[2]
-                t2 = self.bending_params[3]
-                a1 = self.bending_params[4]
-                a2 = self.bending_params[5]
-                A = a1 * a2
-                dir = self.bending_params[6]
-                n1 = self.n1[0]
-                n2 = self.n2[0]
-                # print(n1)
-                # print(n2)
-                df1dn1 = ti.Matrix.zero(data_type, 3, 3)
-                df1dn2 = ti.Matrix.zero(data_type, 3, 3)
-                df2dn1 = ti.Matrix.zero(data_type, 3, 3)
-                df2dn2 = ti.Matrix.zero(data_type, 3, 3)
-                # if (self.crease_type[i] == VALLEY):
-                #     df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                #     df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
-                #     df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
-                #     df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # index = i + self.crease_pairs_num
+                # self.triplets_bending[index] = [3 * crease_start_index, 3 * related_p2, 3 * crease_end_index, 3 * related_p1]
+                # C1 = self.bending_params[0]
+                # C2 = self.bending_params[1]
+                # t1 = self.bending_params[2]
+                # t2 = self.bending_params[3]
+                # a1 = self.bending_params[4]
+                # a2 = self.bending_params[5]
+                # A = a1 * a2
+                # dir = self.bending_params[6]
+                # n1 = self.n1[0]
+                # n2 = self.n2[0]
+                # # print(n1)
+                # # print(n2)
+                # df1dn1 = ti.Matrix.zero(data_type, 3, 3)
+                # df1dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # df2dn1 = ti.Matrix.zero(data_type, 3, 3)
+                # df2dn2 = ti.Matrix.zero(data_type, 3, 3)
+                # if dir < 0:
+                #     df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 - n_value * a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1), n1[Z] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1)]))
+                #     df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
                 #     # print(df2dn1)
                 # else:
-                #     df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                #     df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
-                #     df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
-                #     df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                if dir < 0:
-                    df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
-                    df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
-                    df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                else:
-                    df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                    df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
-                    df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
-                    df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
-                dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
-                # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
-                dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
-                dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
-                dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
-                dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
-                dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
-                # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
-                block_rp1_1 = dn1dx1.transpose() @ df1dn1 + dn2dx1.transpose() @ df1dn2
-                block_rp1_2 = dn2dx2.transpose() @ df1dn2
-                block_rp1_3 = dn1dx3.transpose() @ df1dn1 + dn2dx3.transpose() @ df1dn2
-                block_rp1_4 = dn1dx4.transpose() @ df1dn1
-                block_rp2_1 = dn1dx1.transpose() @ df2dn1 + dn2dx1.transpose() @ df2dn2
-                block_rp2_2 = dn2dx2.transpose() @ df2dn2
-                block_rp2_3 = dn1dx3.transpose() @ df2dn1 + dn2dx3.transpose() @ df2dn2
-                block_rp2_4 = dn1dx4.transpose() @ df2dn1
-                for k in range(3, 6):
-                    for j in range(0, 3):
-                        self.K_element_bending[index][j, k] = block_rp2_1[j, k - 3]
-                    for j in range(3, 6):
-                        self.K_element_bending[index][j, k] = block_rp2_2[j - 3, k - 3]
-                    for j in range(6, 9):
-                        self.K_element_bending[index][j, k] = block_rp2_3[j - 6, k - 3]
-                    for j in range(9, 12):
-                        self.K_element_bending[index][j, k] = block_rp2_4[j - 9, k - 3]
-                for k in range(9, 12):
-                    for j in range(0, 3):
-                        self.K_element_bending[index][j, k] = block_rp1_1[j, k - 9]
-                    for j in range(3, 6):
-                        self.K_element_bending[index][j, k] = block_rp1_2[j - 3, k - 9]
-                    for j in range(6, 9):
-                        self.K_element_bending[index][j, k] = block_rp1_3[j - 6, k - 9]
-                    for j in range(9, 12):
-                        self.K_element_bending[index][j, k] = block_rp1_4[j - 9, k - 9]
-                for k in range(0, 3):
-                    for j in range(12):
-                        self.K_element_bending[index][j, k    ] = -((1 - t1) * self.K_element_bending[index][j, k + 9] + (1 - t2) * self.K_element_bending[index][j, k + 3])
-                        self.K_element_bending[index][j, k + 6] = -(     t1  * self.K_element_bending[index][j, k + 9] +      t2  * self.K_element_bending[index][j, k + 3])
-                self.K_element_bending[index] = self.K_element_bending[index].transpose()
+                #     df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1 - 2 * n_value * a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                #     df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2 - n_value * a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1), n1[Z] * (n1 - a1 / a2 * n2 - n_value * a2 / a1 * n1)]))
+                #     df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1 - n_value * a2 / a1 * n1)]))
+                #     df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2 - 2 * n_value * a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # # if dir < 0:
+                # #     df1dn1 = C1 * (ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # #     df1dn2 = C1 * (ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                # #     df2dn1 = C2 * (ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                # #     df2dn2 = C2 * (ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # # else:
+                # #     df1dn1 = C1 * (-ti.Matrix.cols([n1[X] * (n2 - a2 / a1 * n1), n1[Y] * (n2 - a2 / a1 * n1), n1[Z] * (n2 - a2 / a1 * n1)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # #     df1dn2 = C1 * (-ti.Matrix.cols([n1[X] * (n1 - a1 / a2 * n2), n1[Y] * (n1 - a1 / a2 * n2), n1[Z] * (n1 - a1 / a2 * n2)]))
+                # #     df2dn1 = C2 * (-ti.Matrix.cols([n2[X] * (n2 - a2 / a1 * n1), n2[Y] * (n2 - a2 / a1 * n1), n2[Z] * (n2 - a2 / a1 * n1)]))
+                # #     df2dn2 = C2 * (-ti.Matrix.cols([n2[X] * (n1 - a1 / a2 * n2), n2[Y] * (n1 - a1 / a2 * n2), n2[Z] * (n1 - a1 / a2 * n2)]) + A * n_value * ti.Matrix.identity(data_type, 3))
+                # dn1dx1 = ti.Matrix.cols([[0., x4[Z] - x3[Z], x3[Y] - x4[Y]], [x3[Z] - x4[Z], 0., x4[X] - x3[X]], [x4[Y] - x3[Y], x3[X] - x4[X], 0.]])
+                # # dn1dx2 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
+                # dn1dx3 = ti.Matrix.cols([[0., x1[Z] - x4[Z], x4[Y] - x1[Y]], [x4[Z] - x1[Z], 0., x1[X] - x4[X]], [x1[Y] - x4[Y], x4[X] - x1[X], 0.]])
+                # dn1dx4 = ti.Matrix.cols([[0., x3[Z] - x1[Z], x1[Y] - x3[Y]], [x1[Z] - x3[Z], 0., x3[X] - x1[X]], [x3[Y] - x1[Y], x1[X] - x3[X], 0.]])
+                # dn2dx1 = ti.Matrix.cols([[0., x3[Z] - x2[Z], x2[Y] - x3[Y]], [x2[Z] - x3[Z], 0., x3[X] - x2[X]], [x3[Y] - x2[Y], x2[X] - x3[X], 0.]])
+                # dn2dx2 = ti.Matrix.cols([[0., x1[Z] - x3[Z], x3[Y] - x1[Y]], [x3[Z] - x1[Z], 0., x1[X] - x3[X]], [x1[Y] - x3[Y], x3[X] - x1[X], 0.]])
+                # dn2dx3 = ti.Matrix.cols([[0., x2[Z] - x1[Z], x1[Y] - x2[Y]], [x1[Z] - x2[Z], 0., x2[X] - x1[X]], [x2[Y] - x1[Y], x1[X] - x2[X], 0.]])
+                # # dn2dx4 = ti.Matrix.cols([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]])
+                # block_rp1_1 = dn1dx1.transpose() @ df1dn1 + dn2dx1.transpose() @ df1dn2
+                # block_rp1_2 = dn2dx2.transpose() @ df1dn2
+                # block_rp1_3 = dn1dx3.transpose() @ df1dn1 + dn2dx3.transpose() @ df1dn2
+                # block_rp1_4 = dn1dx4.transpose() @ df1dn1
+                # block_rp2_1 = dn1dx1.transpose() @ df2dn1 + dn2dx1.transpose() @ df2dn2
+                # block_rp2_2 = dn2dx2.transpose() @ df2dn2
+                # block_rp2_3 = dn1dx3.transpose() @ df2dn1 + dn2dx3.transpose() @ df2dn2
+                # block_rp2_4 = dn1dx4.transpose() @ df2dn1
+                # for k in range(3, 6):
+                #     for j in range(0, 3):
+                #         self.K_element_bending[index][j, k] = block_rp2_1[j, k - 3]
+                #     for j in range(3, 6):
+                #         self.K_element_bending[index][j, k] = block_rp2_2[j - 3, k - 3]
+                #     for j in range(6, 9):
+                #         self.K_element_bending[index][j, k] = block_rp2_3[j - 6, k - 3]
+                #     for j in range(9, 12):
+                #         self.K_element_bending[index][j, k] = block_rp2_4[j - 9, k - 3]
+                # for k in range(9, 12):
+                #     for j in range(0, 3):
+                #         self.K_element_bending[index][j, k] = block_rp1_1[j, k - 9]
+                #     for j in range(3, 6):
+                #         self.K_element_bending[index][j, k] = block_rp1_2[j - 3, k - 9]
+                #     for j in range(6, 9):
+                #         self.K_element_bending[index][j, k] = block_rp1_3[j - 6, k - 9]
+                #     for j in range(9, 12):
+                #         self.K_element_bending[index][j, k] = block_rp1_4[j - 9, k - 9]
+                # for k in range(0, 3):
+                #     for j in range(12):
+                #         self.K_element_bending[index][j, k    ] = -((1 - t1) * self.K_element_bending[index][j, k + 9] + (1 - t2) * self.K_element_bending[index][j, k + 3])
+                #         self.K_element_bending[index][j, k + 6] = -(     t1  * self.K_element_bending[index][j, k + 9] +      t2  * self.K_element_bending[index][j, k + 3])
+                # self.K_element_bending[index] = self.K_element_bending[index].transpose()
                 self.total_energy[0] += energy
                 # print(energy)
 

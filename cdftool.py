@@ -280,6 +280,11 @@ class CurveFittingHelper:
     def setOriginList(self, origin):
         self.origin = origin
 
+    def setExoGoal(self, x, y, dir):
+        self.exo_x = x
+        self.exo_y = y
+        self.exo_dir = dir
+
     def setDirectionGoalList(self, goal):
         self.direction_goal = goal
 
@@ -295,6 +300,40 @@ class CurveFittingHelper:
     def strictMatch(self):
         p1, p2 = self.match('regular')
         return max(p1, p2)
+
+    def exoMatch(self, intersect1, intersect2):
+        origin_exo_state1 = self.origin[0]
+        origin_exo_state2 = self.origin[1]
+        origin_angle_exo_state1 = self.direction_origin[0]
+        origin_angle_exo_state2 = self.direction_origin[1]
+
+        #1
+        # target_direction1 = 0.0
+        point1 = [1., 0.]
+        point2 = [math.cos(origin_angle_exo_state1), math.sin(origin_angle_exo_state1)]
+        error = 0. #(math.sqrt((point1[X] - point2[X]) ** 2 + (point1[Y] - point2[Y]) ** 2)) / 2. #0-1
+        bigger_than_zero = 1 if origin_exo_state1[X] > 0 else 0 #0/1
+        y_distance = math.sqrt(origin_exo_state1[Y] ** 2) # small is better
+
+        if intersect1:
+            first_fitness = 0.
+        else:
+            first_fitness = bigger_than_zero * (1. - error) / (1. + y_distance)
+
+        #2
+        target_direction = self.exo_dir
+        point1 = [math.cos(target_direction), math.sin(target_direction)]
+        point2 = [math.cos(origin_angle_exo_state2), math.sin(origin_angle_exo_state2)]
+        error = (math.sqrt((point1[X] - point2[X]) ** 2 + (point1[Y] - point2[Y]) ** 2)) / 2. #0-1
+        distance = math.sqrt((origin_exo_state2[X] - self.exo_x) ** 2 + (origin_exo_state2[Y] - self.exo_y) ** 2)
+
+        if intersect2:
+            second_fitness = 0.
+        else:
+            second_fitness = (1. - error) / (1 + distance)
+
+        return second_fitness * first_fitness
+
     
     def directionMatch(self, number):
         number = number - 1
