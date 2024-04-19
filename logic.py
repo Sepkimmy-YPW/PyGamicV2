@@ -40,7 +40,7 @@ from cdftool import *
 # --Stltool module for outputing 3D model file of the origami-- #
 from stltool2 import StlMaker
 
-from phys_sim import OrigamiSimulator
+from phys_sim5 import OrigamiSimulator
 from phys_sim4E import OrigamiSimulator as OrigamiSimulatorE
 
 # Window for user to design origami
@@ -1654,6 +1654,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.stl_writer.setMethod(method)
             self.stl_writer.setThinMode(self.pref_pack['thin_mode'])
             self.stl_writer.setDbEnable(self.pref_pack['enable_db'])
+            self.stl_writer.setPillarDisable(self.pref_pack['disable_pillars'])
             connection_enabled = stl_dialog.getConnectionNeeded()
             board_enabled = stl_dialog.getBoardNeeded()
 
@@ -3934,7 +3935,7 @@ class StlOutputThread(QThread):
 
                 self.stl_writer.setBoardHeight(self.pref_pack["layer"] * self.stl_writer.print_accuracy)
 
-                hard_file_path = file_path.split('.')[0] + '_H.stl'
+                hard_file_path = file_path.split('.')[0] + '.stl'
                 if show_process:
                     for unit_id in range(unit_size):
                         self.stl_writer.calculateTriPlaneForUnit(unit_id, inner=False)

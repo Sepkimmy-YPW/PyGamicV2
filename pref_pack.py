@@ -37,7 +37,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             "thin_mode": False,
             "layer": 3,
             "asym": False,
-            "only_two_sides": False
+            "only_two_sides": False,
+            "disable_pillars": False,
         }
 
         self.limitation = {
@@ -128,6 +129,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.checkBox_asymmetric.setChecked(self.pref_pack["asym"])
         #39
         self.checkBox_onl_two_side.setChecked(self.pref_pack["only_two_sides"])
+        #310
+        self.checkBox_disable_pillars.setChecked(self.pref_pack["disable_pillars"])
         #4 We need to know which mode is
         cursor_axis_mode = self.pref_pack["cursor_axis_mode"]
         if cursor_axis_mode == "pixel_axis":
@@ -160,8 +163,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.doubleSpinBox_miura_angle_min.setValue(self.limitation["miura_angle"][0])
         self.doubleSpinBox_miura_angle_max.setValue(self.limitation["miura_angle"][1])
         #3
-        self.spinBox_row_number_min.setValue(self.limitation["row_number"][0])
-        self.spinBox_row_number_max.setValue(self.limitation["row_number"][1])
+        self.spinBox_row_number_min.setValue(int(self.limitation["row_number"][0]))
+        self.spinBox_row_number_max.setValue(int(self.limitation["row_number"][1]))
         #4
         self.spinBox_generation.setValue(self.limitation["generation"])
         #5
@@ -252,6 +255,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.pref_pack["asym"] = self.checkBox_asymmetric.isChecked()
         #39
         self.pref_pack["only_two_sides"] = self.checkBox_onl_two_side.isChecked()
+        #310
+        self.pref_pack["disable_pillars"] = self.checkBox_disable_pillars.isChecked()
         #4 We need to know which radio button is checked
         cursor_axis_mode = ""
         if self.radioButton_pixel_axis.isChecked():
@@ -369,7 +374,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                     head = segment[0][1: -1]
                     content = segment[-1][0: -1]
                     if head not in [
-                        "print_accuracy", "split_distance", "output_bc", "board_bias", "asym", "only_two_sides"
+                        "print_accuracy", "split_distance", "output_bc", "board_bias", "asym", "only_two_sides", "disable_pillars", 
                         "connection_angle", "enable_db", "enable_db_bind", "additional_line_option", "stl_asymmetry", "thin_mode", "layer", "middle_bias", 
                         "cursor_axis_mode", "line_weight", "show_keypoint", "theme", "tsa_radius", "tsa_resolution",
                         "unit_length", "miura_angle", "row_number", "generation", 
@@ -386,7 +391,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                         else:
                             raise TypeError
                     #2
-                    elif head in ["output_bc", "enable_db", "enable_db_bind", "stl_asymmetry", "thin_mode", "show_keypoint", "debug_mode", "asym", "only_two_sides"]:
+                    elif head in ["output_bc", "enable_db", "enable_db_bind", "stl_asymmetry", "thin_mode", "show_keypoint", "debug_mode", "asym", "only_two_sides", "disable_pillars"]:
                         if content == "True":
                             self.pref_pack[head] = True
                             continue

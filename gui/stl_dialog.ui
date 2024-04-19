@@ -109,7 +109,7 @@
     <string>Upper bias</string>
    </property>
    <property name="checked">
-    <bool>true</bool>
+    <bool>false</bool>
    </property>
   </widget>
   <widget class="QLabel" name="label_unit_id">
@@ -162,6 +162,9 @@
    </property>
    <property name="text">
     <string>True</string>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
    </property>
   </widget>
   <widget class="QDoubleSpinBox" name="doubleSpinBox_unit_height">
@@ -344,6 +347,9 @@
    <property name="text">
     <string>True</string>
    </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
   </widget>
   <widget class="QLabel" name="label_board_height">
    <property name="geometry">
@@ -388,6 +394,9 @@
    </property>
    <property name="text">
     <string>Up-Symmetry</string>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
    </property>
   </widget>
  </widget>

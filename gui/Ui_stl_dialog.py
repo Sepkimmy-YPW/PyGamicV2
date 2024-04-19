@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2023 Spring\11-1 SGLAB\工作项目\pygamic\stl_dialog.ui'
+# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2023-2024 Spring\11-1 SGLAB\pygamic\gui\stl_dialog.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.4
 #
@@ -37,7 +37,7 @@ class Ui_Dialog(object):
         self.radioButton_both_bias.setObjectName("radioButton_both_bias")
         self.radioButton_upper_bias = QtWidgets.QRadioButton(Dialog)
         self.radioButton_upper_bias.setGeometry(QtCore.QRect(100, 120, 89, 16))
-        self.radioButton_upper_bias.setChecked(True)
+        self.radioButton_upper_bias.setChecked(False)
         self.radioButton_upper_bias.setObjectName("radioButton_upper_bias")
         self.label_unit_id = QtWidgets.QLabel(Dialog)
         self.label_unit_id.setGeometry(QtCore.QRect(40, 170, 121, 21))
@@ -51,6 +51,7 @@ class Ui_Dialog(object):
         self.label_connections.setObjectName("label_connections")
         self.checkBox_true = QtWidgets.QCheckBox(Dialog)
         self.checkBox_true.setGeometry(QtCore.QRect(170, 205, 71, 16))
+        self.checkBox_true.setChecked(True)
         self.checkBox_true.setObjectName("checkBox_true")
         self.doubleSpinBox_unit_height = QtWidgets.QDoubleSpinBox(Dialog)
         self.doubleSpinBox_unit_height.setGeometry(QtCore.QRect(150, 30, 62, 22))
@@ -102,6 +103,7 @@ class Ui_Dialog(object):
         self.label_board.setObjectName("label_board")
         self.checkBox_board_true = QtWidgets.QCheckBox(Dialog)
         self.checkBox_board_true.setGeometry(QtCore.QRect(170, 234, 71, 16))
+        self.checkBox_board_true.setChecked(True)
         self.checkBox_board_true.setObjectName("checkBox_board_true")
         self.label_board_height = QtWidgets.QLabel(Dialog)
         self.label_board_height.setGeometry(QtCore.QRect(40, 260, 121, 21))
@@ -114,6 +116,7 @@ class Ui_Dialog(object):
         self.doubleSpinBox_board_height.setObjectName("doubleSpinBox_board_height")
         self.radioButton_symmetry = QtWidgets.QRadioButton(Dialog)
         self.radioButton_symmetry.setGeometry(QtCore.QRect(100, 145, 89, 16))
+        self.radioButton_symmetry.setChecked(True)
         self.radioButton_symmetry.setObjectName("radioButton_symmetry")
 
         self.retranslateUi(Dialog)

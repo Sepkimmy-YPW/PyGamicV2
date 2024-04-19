@@ -71,6 +71,8 @@ class StlMaker:
 
         self.only_two_sides = False
 
+        self.disable_pillars = False
+
     def clearValidCrease(self):
         self.valid_crease_list.clear()
 
@@ -109,6 +111,9 @@ class StlMaker:
         
     def setAsym(self, asym):
         self.asym = asym
+
+    def setPillarDisable(self, flag):
+        self.disable_pillars = flag
 
     def setOnlyTwoSides(self, flag):
         self.only_two_sides = flag
@@ -603,7 +608,7 @@ class StlMaker:
             #         exist_modify = True
             #         break
             
-            original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.print_accuracy * 3., 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0., accumulation=True)
+            original_kps, problem_id = self.calculateInnerBiasAndSettingHeight(unit, i, self.min_bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0., accumulation=True)
             new_kps, _ = self.calculateInnerBiasAndSettingHeight(unit, i, self.bias, 0.0, MIDDLE, border_penalty=self.bias - 3.0 * self.base_inner_bias if self.method == 'symmetry' else 0., accumulation=True)
             reverse_kps = []
             for k in range(0, -len(new_kps), -1):
@@ -614,90 +619,92 @@ class StlMaker:
             #     self.special_point_list.append([])
 
             pillar_for_unit = []
-            pillar_resolution = 3
-
-            accumulate_index = 0
-            creases = unit.getCrease()
-            for j in range(len(creases)):
-                # if self.unit_bias_list[i][j] != None:
-                #     if j in problem_id:
-                #         accumulate_index += 1
-                #         continue
-                #     continue
-                crease = creases[j]
-                # next_crease = creases[(j + 1) % len(creases)]
-                length = crease.getLength()
-                # next_length = next_crease.getLength()
-
-                if j in problem_id:
-                    accumulate_index += 1
-                    continue
-
-                mid_point = [(original_kps[j - accumulate_index][X] + original_kps[(j - accumulate_index + 1) % len(original_kps)][X]) / 2.0, 
-                            (original_kps[j - accumulate_index][Y] + original_kps[(j - accumulate_index + 1) % len(original_kps)][Y]) / 2.0]
+            if not self.disable_pillars:
                 
-                quad_back_point = [(3. * original_kps[j - accumulate_index][X] + original_kps[(j - accumulate_index + 1) % len(original_kps)][X]) / 4.0, 
-                                    (3. * original_kps[j - accumulate_index][Y] + original_kps[(j - accumulate_index + 1) % len(original_kps)][Y]) / 4.0]
-                
-                quad_front_point = [(original_kps[j - accumulate_index][X] + 3. * original_kps[(j - accumulate_index + 1) % len(original_kps)][X]) / 4.0, 
-                                    (original_kps[j - accumulate_index][Y] + 3. * original_kps[(j - accumulate_index + 1) % len(original_kps)][Y]) / 4.0]
-                
-                direction = crease.getDirection()
-                normal = crease.getNormal()
-                # next_direction = next_crease.getDirection()
+                pillar_resolution = 3
 
-                if 24. * bias < length:
-                    #middle pillar
+                accumulate_index = 0
+                creases = unit.getCrease()
+                for j in range(len(creases)):
+                    # if self.unit_bias_list[i][j] != None:
+                    #     if j in problem_id:
+                    #         accumulate_index += 1
+                    #         continue
+                    #     continue
+                    crease = creases[j]
+                    # next_crease = creases[(j + 1) % len(creases)]
+                    length = crease.getLength()
+                    # next_length = next_crease.getLength()
+
+                    if j in problem_id:
+                        accumulate_index += 1
+                        continue
+
+                    mid_point = [(original_kps[j - accumulate_index][X] + original_kps[(j - accumulate_index + 1) % len(original_kps)][X]) / 2.0, 
+                                (original_kps[j - accumulate_index][Y] + original_kps[(j - accumulate_index + 1) % len(original_kps)][Y]) / 2.0]
                     
-                    forward_point = [mid_point[X] + bias * direction[X], mid_point[Y] + bias * direction[Y], 0.0]
-                    backward_point = [mid_point[X] - bias * direction[X], mid_point[Y] - bias * direction[Y], 0.0]
-                    normal_point = [mid_point[X] + bias * normal[X], mid_point[Y] + bias * normal[Y], 0.0]
-
-                    new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
-                    pillar_for_unit.append(new_pillar_point)
-
-                    # quad_back
-                    forward_point = [quad_back_point[X] + bias * direction[X], quad_back_point[Y] + bias * direction[Y], 0.0]
-                    backward_point = [quad_back_point[X] - bias * direction[X], quad_back_point[Y] - bias * direction[Y], 0.0]
-                    normal_point = [quad_back_point[X] + bias * normal[X], quad_back_point[Y] + bias * normal[Y], 0.0]
-
-                    new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
-                    pillar_for_unit.append(new_pillar_point)
-
-                    # quad_front
-                    forward_point = [quad_front_point[X] + bias * direction[X], quad_front_point[Y] + bias * direction[Y], 0.0]
-                    backward_point = [quad_front_point[X] - bias * direction[X], quad_front_point[Y] - bias * direction[Y], 0.0]
-                    normal_point = [quad_front_point[X] + bias * normal[X], quad_front_point[Y] + bias * normal[Y], 0.0]
-
-                    new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
-                    pillar_for_unit.append(new_pillar_point)
-                
-                elif 12. * bias < length:
-                    # quad_back
-                    forward_point = [quad_back_point[X] + bias * direction[X], quad_back_point[Y] + bias * direction[Y], 0.0]
-                    backward_point = [quad_back_point[X] - bias * direction[X], quad_back_point[Y] - bias * direction[Y], 0.0]
-                    normal_point = [quad_back_point[X] + bias * normal[X], quad_back_point[Y] + bias * normal[Y], 0.0]
-
-                    new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
-                    pillar_for_unit.append(new_pillar_point)
-
-                    # quad_front
-                    forward_point = [quad_front_point[X] + bias * direction[X], quad_front_point[Y] + bias * direction[Y], 0.0]
-                    backward_point = [quad_front_point[X] - bias * direction[X], quad_front_point[Y] - bias * direction[Y], 0.0]
-                    normal_point = [quad_front_point[X] + bias * normal[X], quad_front_point[Y] + bias * normal[Y], 0.0]
-
-                    new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
-                    pillar_for_unit.append(new_pillar_point)
-                
-                elif 6. * bias < length:
-                    #middle pillar
+                    quad_back_point = [(3. * original_kps[j - accumulate_index][X] + original_kps[(j - accumulate_index + 1) % len(original_kps)][X]) / 4.0, 
+                                        (3. * original_kps[j - accumulate_index][Y] + original_kps[(j - accumulate_index + 1) % len(original_kps)][Y]) / 4.0]
                     
-                    forward_point = [mid_point[X] + bias * direction[X], mid_point[Y] + bias * direction[Y], 0.0]
-                    backward_point = [mid_point[X] - bias * direction[X], mid_point[Y] - bias * direction[Y], 0.0]
-                    normal_point = [mid_point[X] + bias * normal[X], mid_point[Y] + bias * normal[Y], 0.0]
+                    quad_front_point = [(original_kps[j - accumulate_index][X] + 3. * original_kps[(j - accumulate_index + 1) % len(original_kps)][X]) / 4.0, 
+                                        (original_kps[j - accumulate_index][Y] + 3. * original_kps[(j - accumulate_index + 1) % len(original_kps)][Y]) / 4.0]
+                    
+                    direction = crease.getDirection()
+                    normal = crease.getNormal()
+                    # next_direction = next_crease.getDirection()
 
-                    new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
-                    pillar_for_unit.append(new_pillar_point)
+                    if 24. * bias < length:
+                        #middle pillar
+                        
+                        forward_point = [mid_point[X] + bias * direction[X], mid_point[Y] + bias * direction[Y], 0.0]
+                        backward_point = [mid_point[X] - bias * direction[X], mid_point[Y] - bias * direction[Y], 0.0]
+                        normal_point = [mid_point[X] + bias * normal[X], mid_point[Y] + bias * normal[Y], 0.0]
+
+                        new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
+                        pillar_for_unit.append(new_pillar_point)
+
+                        # quad_back
+                        forward_point = [quad_back_point[X] + bias * direction[X], quad_back_point[Y] + bias * direction[Y], 0.0]
+                        backward_point = [quad_back_point[X] - bias * direction[X], quad_back_point[Y] - bias * direction[Y], 0.0]
+                        normal_point = [quad_back_point[X] + bias * normal[X], quad_back_point[Y] + bias * normal[Y], 0.0]
+
+                        new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
+                        pillar_for_unit.append(new_pillar_point)
+
+                        # quad_front
+                        forward_point = [quad_front_point[X] + bias * direction[X], quad_front_point[Y] + bias * direction[Y], 0.0]
+                        backward_point = [quad_front_point[X] - bias * direction[X], quad_front_point[Y] - bias * direction[Y], 0.0]
+                        normal_point = [quad_front_point[X] + bias * normal[X], quad_front_point[Y] + bias * normal[Y], 0.0]
+
+                        new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
+                        pillar_for_unit.append(new_pillar_point)
+                    
+                    elif 12. * bias < length:
+                        # quad_back
+                        forward_point = [quad_back_point[X] + bias * direction[X], quad_back_point[Y] + bias * direction[Y], 0.0]
+                        backward_point = [quad_back_point[X] - bias * direction[X], quad_back_point[Y] - bias * direction[Y], 0.0]
+                        normal_point = [quad_back_point[X] + bias * normal[X], quad_back_point[Y] + bias * normal[Y], 0.0]
+
+                        new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
+                        pillar_for_unit.append(new_pillar_point)
+
+                        # quad_front
+                        forward_point = [quad_front_point[X] + bias * direction[X], quad_front_point[Y] + bias * direction[Y], 0.0]
+                        backward_point = [quad_front_point[X] - bias * direction[X], quad_front_point[Y] - bias * direction[Y], 0.0]
+                        normal_point = [quad_front_point[X] + bias * normal[X], quad_front_point[Y] + bias * normal[Y], 0.0]
+
+                        new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
+                        pillar_for_unit.append(new_pillar_point)
+                    
+                    elif 6. * bias < length:
+                        #middle pillar
+                        
+                        forward_point = [mid_point[X] + bias * direction[X], mid_point[Y] + bias * direction[Y], 0.0]
+                        backward_point = [mid_point[X] - bias * direction[X], mid_point[Y] - bias * direction[Y], 0.0]
+                        normal_point = [mid_point[X] + bias * normal[X], mid_point[Y] + bias * normal[Y], 0.0]
+
+                        new_pillar_point = deepcopy([forward_point, backward_point, normal_point])
+                        pillar_for_unit.append(new_pillar_point)
             #     if 10. * bias < length:
             #         #side pillar
                     
@@ -1063,7 +1070,14 @@ class StlMaker:
                             else:
                                 bias_list.append(bias)
                 else:
-                    bias_list.append(bias)
+                    if unit_id != -1 and self.unit_bias_list[unit_id][i] != None and \
+                        (not self.only_two_sides): # condition to modify
+                        if accumulation:
+                            bias_list.append(self.unit_bias_list[unit_id][i] + bias)
+                        else:
+                            bias_list.append(self.unit_bias_list[unit_id][i])
+                    else:
+                        bias_list.append(bias)
         if unit.connection != None and enable_strong_modify:
             bias_list[unit.connection_number] = math.atan(unit.connection) * self.unit_height + self.min_bias
 
@@ -1907,7 +1921,7 @@ class StlMaker:
                 self.tri_list[unit_id] = self.calculateTriPlaneWithBiasAndHeight(
                     unit                =unit, 
                     unit_id             =unit_id, 
-                    upper_bias          =self.min_bias, 
+                    upper_bias          =self.min_bias * 1.001, 
                     down_bias           =self.bias, 
                     base_height         =0,
                     upper_height        =self.height / 2. - self.print_accuracy / 2.0, 
@@ -1921,7 +1935,7 @@ class StlMaker:
                     unit                =unit, 
                     unit_id             =unit_id, 
                     upper_bias          =self.min_bias, 
-                    down_bias           =self.min_bias, 
+                    down_bias           =self.min_bias * 1.001, 
                     base_height         =self.height / 2. - self.print_accuracy / 2.0,
                     upper_height        =self.height / 2., 
                     add_hole            =add_hole, 
@@ -1939,7 +1953,7 @@ class StlMaker:
                     self.tri_list[unit_id] += self.calculateTriPlaneWithBiasAndHeight(
                         unit                =unit, 
                         unit_id             =unit_id, 
-                        upper_bias          =self.min_bias, 
+                        upper_bias          =self.min_bias * 1.001, 
                         down_bias           =self.min_bias, 
                         base_height         =self.height / 2. + self.board_height,
                         upper_height        =self.height / 2. + self.board_height + self.print_accuracy / 2.0, 
@@ -1953,7 +1967,7 @@ class StlMaker:
                         unit                =unit, 
                         unit_id             =unit_id, 
                         upper_bias          =self.bias, 
-                        down_bias           =self.min_bias, 
+                        down_bias           =self.min_bias * 1.001, 
                         base_height         =self.height / 2. + self.board_height + self.print_accuracy / 2.0,
                         upper_height        =self.height + self.board_height, 
                         add_hole            =add_hole, 
@@ -1977,7 +1991,7 @@ class StlMaker:
                     self.tri_list[unit_id] += self.calculateTriPlaneWithBiasAndHeight(
                         unit                =modified_unit, 
                         unit_id             =unit_id, 
-                        upper_bias          =self.min_bias, 
+                        upper_bias          =self.min_bias * 1.001, 
                         down_bias           =self.min_bias, 
                         base_height         =self.height / 2. + self.board_height,
                         upper_height        =self.height / 2. + self.board_height + self.print_accuracy / 2.0, 
@@ -1991,7 +2005,7 @@ class StlMaker:
                         unit                =modified_unit, 
                         unit_id             =unit_id, 
                         upper_bias          =self.bias, 
-                        down_bias           =self.min_bias, 
+                        down_bias           =self.min_bias * 1.001, 
                         base_height         =self.height / 2. + self.board_height + self.print_accuracy / 2.0,
                         upper_height        =self.height + self.board_height, 
                         add_hole            =add_hole, 
