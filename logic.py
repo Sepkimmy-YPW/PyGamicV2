@@ -4,8 +4,8 @@ import os
 import math
 import numpy as np
 import json
-import multiprocessing
-import matplotlib as mpl
+# import multiprocessing
+# import matplotlib as mpl
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 # Add GUI python file into our application
@@ -40,8 +40,8 @@ from cdftool import *
 # --Stltool module for outputing 3D model file of the origami-- #
 from stltool2 import StlMaker
 
-from phys_sim5 import OrigamiSimulator
-from phys_sim4E import OrigamiSimulator as OrigamiSimulatorE
+# from phys_sim9 import OrigamiSimulator as OrigamiSimulatorE
+FOLDING_MAXIMUM = 0.95
 
 # Window for user to design origami
 class Mainwindow(Ui_MainWindow, QMainWindow):
@@ -123,7 +123,6 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.hole_size          = self.spinbox_hole_size.value()
         self.hole_resolution    = self.spinbox_resolution.value()
         self.state              = self.INITIAL_STATE
-        self.expert_mode        = False
 
         # Storage information for designer
         self.storage = []
@@ -243,6 +242,13 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
 
         self.choose_unit_id = -1
         self.choose_crease_id = -1
+        self.choose_kl_id = -1
+        self.choose_line_id = -1
+        self.choose_crease_sequence_id = -1
+        self.choose_string_id = -1
+        self.expert_mode = False
+        self.edit_kl_mode = False
+        self.edit_sequence_mode = False
 
         # Parameters of hard crease
         self.hard_crease_index = []
@@ -265,6 +271,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)                     # strong focus 
 
         self.widget.setVisible(False)
+        self.widget_edit_kl.setVisible(False)
+        self.widget_edit_sequence.setVisible(False)
+
+        self.full_description_mode = True
 
     def addConnectionHole(self): # real axis
         self.connection_hole_kps.clear()
@@ -378,6 +388,19 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                         
         self.backup_connection_hole_kps = deepcopy(self.connection_hole_kps)
 
+    def addCrease(self, creases):
+        for new_crease in creases:
+            if new_crease.getLength() < 1e-5:
+                continue
+            same_crease = False
+            for crease in self.lines:
+                if sameCrease(new_crease, crease):
+                    # same kp
+                    same_crease = True
+                    break
+            if not same_crease:
+                self.lines.append(new_crease)
+
     def addHoleToUnit(self, pixel_x, pixel_y):
         """
         @ function: Convert some axis fro
@@ -414,6 +437,17 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.updateMessage("Total: " + str(len(self.hole_kps)) + " Successfully add hole on unit " + str(unit_id) + " ...")
         else:
             self.updateMessage("Failed to add hole, check if it is inside some unit...", "WARNING")    
+
+    def addKp(self, kps):
+        for new_kp in kps:
+            same_kp = False
+            for kp in self.kps:
+                if distance(kp, new_kp) < 1e-5:
+                    # same kp
+                    same_kp = True
+                    break
+            if not same_kp:
+                self.kps.append(new_kp)
 
     def addLeanMiuraStorage(self):
         lean_miura_storage = ModuleLeanMiura()
@@ -487,10 +521,12 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 self.strings.append(TSAString())
                 self.strings[-1].type = self.string_type
                 self.strings[-1].setStringKeyPoint(self.string_start_point, end_point)
+                self.strings[-1].id = len(self.string_total_information)
 
                 self.strings.append(TSAString())
                 self.strings[-1].type = PASS
                 self.strings[-1].setStringKeyPoint(end_point, end_point)
+                self.strings[-1].id = len(self.string_total_information)
 
                 tsa_point = TSAPoint()
                 tsa_point.point = np.array(end_point)
@@ -512,6 +548,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 self.strings.append(TSAString())
                 self.strings[-1].type = self.string_type
                 self.strings[-1].setStringKeyPoint(self.string_start_point, end_point)
+                self.strings[-1].id = len(self.string_total_information)
 
                 tsa_point = TSAPoint()
                 tsa_point.point = np.array(end_point)
@@ -610,8 +647,18 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         # string keypoints
         for s in self.strings:
             self.pixel_string_kps.append([self.toPixel(s.start_point), self.toPixel(s.end_point),
-                s.type, s.width
+                s.type, s.width, s.id
             ])
+
+    def calculateSequence(self):
+        try:
+            tb = TreeBasedOrigamiGraph(self.kps, self.lines)
+            tb.calculateTreeBasedGraph()
+            if self.edit_sequence_mode:
+                self.chooseCreaseSequence(self.choose_crease_sequence_id)
+            self.updateMessage("Succeed to calculate sequence")
+        except:
+            self.updateMessage("Failed to calculate sequence")
 
     def cdfCurveFitting(self):
         if self.limitation["match_mode"] != 3:
@@ -653,6 +700,9 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             )
         self.cdf_curve_fitting_thread._emit.connect(self.drawProcess)
         self.cdf_curve_fitting_thread.start()
+
+    def changeCoeff(self):
+        self.lines[self.choose_crease_sequence_id].coeff = self.doubleSpinBox_coeff_value.value()
 
     def changeCopyTime(self):
         self.copy_time = self.spinbox_copy_time.value()
@@ -711,12 +761,42 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.label_folding_percent.setGeometry(int(180 + 0.74 * val), 494, 51, 16)
         self.enable_design = True
 
+    def changeHard(self):
+        previous = self.lines[self.choose_crease_sequence_id].hard
+        if previous:
+            self.lines[self.choose_crease_sequence_id].hard = False
+            self.radioButton_hard_crease.setChecked(False)
+        else:
+            self.lines[self.choose_crease_sequence_id].hard = True
+            self.radioButton_hard_crease.setChecked(True)
+        self.enable_design
+
+    def changeHardAngle(self):
+        self.lines[self.choose_crease_sequence_id].hard_angle = self.doubleSpinBox_hard_angle_value.value() * math.pi / 180.0
+
     def changeHoleSize(self):
         self.hole_size = self.spinbox_hole_size.value()
 
     def changeHoleResolution(self):
         self.hole_resolution = self.spinbox_resolution.value()
     
+    def changeKlLength(self):
+        self.storage[self.choose_kl_id][DATA][self.choose_line_id][0] = self.doubleSpinBox_length.value()
+        self.enable_design = True
+
+    def changeKlSectorAngle(self):
+        self.storage[self.choose_kl_id][DATA][self.choose_line_id][1] = self.doubleSpinBox_sector_angle.value() / 180.0 * math.pi
+        self.enable_design = True
+
+    def changeLevel(self):
+        self.lines[self.choose_crease_sequence_id].level = self.spinBox_level_value.value()
+
+    def changeRecoverLevel(self):
+        self.lines[self.choose_crease_sequence_id].recover_level = self.spinBox_recover_level_value.value()
+
+    def changeUnitBias(self):
+        self.unit_bias_list[self.choose_unit_id][self.choose_crease_id] = self.doubleSpinBox_expert_mode.value()
+
     def checkHoleKpIsValid(self):
         for ele in self.hole_kps:
             try:
@@ -730,7 +810,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 origami = self.origami_info[origami_id]
                 lower_x_bound = origami[0][X] + self.con_left_length
                 upper_x_bound = origami[0][X] + origami[1] + self.con_left_length
-                unit = self.getUnitWithKps(in_unit_id)
+                unit = self.units[in_unit_id].getSeqPoint()
                 if self.enable_connection:
                     min_dis = pointInPolygon(ele[0], unit, return_min_distance=True, lower_x_bound=lower_x_bound, upper_x_bound=upper_x_bound)
                 else:
@@ -742,8 +822,41 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             except:
                 ele[2] = False
 
-    def changeUnitBias(self):
-        self.unit_bias_list[self.choose_unit_id][self.choose_crease_id] = self.doubleSpinBox_expert_mode.value()
+    def chooseKl(self, id):
+        self.choose_kl_id = id
+        self.choose_line_id = 0
+        self.label_current_kl_number.setText(str(id))
+        self.label_current_line_number.setText("0")
+        self.doubleSpinBox_length.setValue(self.storage[self.choose_kl_id][DATA][self.choose_line_id][0])
+        self.doubleSpinBox_sector_angle.setValue(self.storage[self.choose_kl_id][DATA][self.choose_line_id][1] * 180.0 / math.pi)
+
+    def chooseKlLine(self, id):
+        self.choose_line_id = id
+        self.label_current_line_number.setText(str(id))
+        self.doubleSpinBox_length.setValue(self.storage[self.choose_kl_id][DATA][self.choose_line_id][0])
+        self.doubleSpinBox_sector_angle.setValue(self.storage[self.choose_kl_id][DATA][self.choose_line_id][1] * 180.0 / math.pi)
+
+    def chooseNextKl(self):
+        for i in range(self.choose_kl_id + 1, len(self.storage)):
+            if type(self.storage[i][DATA]) == KinematicLine:
+                self.chooseKl(i)
+                break
+
+    def chooseNextKlLine(self):
+        line_number = len(self.storage[self.choose_kl_id][DATA])
+        choose_line_id = (self.choose_line_id + 1) % line_number
+        self.chooseKlLine(choose_line_id)
+
+    def choosePreviousKl(self):
+        for i in range(self.choose_kl_id - 1, -1, -1):
+            if type(self.storage[i][DATA]) == KinematicLine:
+                self.chooseKl(i)
+                break
+
+    def choosePreviousKlLine(self):
+        line_number = len(self.storage[self.choose_kl_id][DATA])
+        choose_line_id = (self.choose_line_id - 1 + line_number) % line_number
+        self.chooseKlLine(choose_line_id)
 
     def chooseUnit(self, id):
         self.choose_unit_id = id
@@ -759,6 +872,15 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.radioButton_expert_mode.setChecked(True)
             self.doubleSpinBox_expert_mode.setVisible(True)
             self.doubleSpinBox_expert_mode.setValue(self.unit_bias_list[self.choose_unit_id][self.choose_crease_id])
+
+    def chooseCreaseSequence(self, id):
+        self.choose_crease_sequence_id = id
+        self.label_crease_sequence_id.setText(str(id))
+        self.spinBox_level_value.setValue(self.lines[id].level)
+        self.doubleSpinBox_coeff_value.setValue(self.lines[id].coeff)
+        self.spinBox_recover_level_value.setValue(self.lines[id].recover_level)
+        self.radioButton_hard_crease.setChecked(self.lines[id].hard)
+        self.doubleSpinBox_hard_angle_value.setValue(self.lines[id].hard_angle * 180.0 / math.pi)
 
     def chooseCrease(self, id):
         self.choose_crease_id = id
@@ -785,6 +907,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         choose_crease_id = (self.choose_crease_id + 1) % crease_number
         self.chooseCrease(choose_crease_id)
     
+    def chooseNextCreaseSequence(self):
+        id = (self.choose_crease_sequence_id + 1) % len(self.lines)
+        self.chooseCreaseSequence(id)
+
     def choosePreviousUnit(self):
         unit_number = len(self.units)
         choose_unit_id = (self.choose_unit_id - 1 + unit_number) % unit_number
@@ -794,6 +920,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         crease_number = len(self.units[self.choose_unit_id].getCrease())
         choose_crease_id = (self.choose_crease_id - 1 + crease_number) % crease_number
         self.chooseCrease(choose_crease_id)
+
+    def choosePreviousCreaseSequence(self):
+        id = (self.choose_crease_sequence_id - 1 + len(self.lines)) % len(self.lines)
+        self.chooseCreaseSequence(id)
 
     def closeEvent(self, event):
         self.stopThread()
@@ -835,6 +965,11 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.actionPlot_Evolution_Data.triggered.connect(self.plotEvolutionJson)
         self.actionExplicit_Simulation_E.triggered.connect(self.physicalSimulationExplicit)
         self.actionExpert_Mode_E.triggered.connect(self.expertModeEnable)
+        self.actionEdit_kl_E.triggered.connect(self.editKl)
+        self.actionCalculate_Sequence.triggered.connect(self.calculateSequence)
+        self.actionAs_Full_description_Data.triggered.connect(self.exportDescriptionData)
+        self.actionEdit_Sequence_S.triggered.connect(self.editSequence)
+        self.actionImport_string_path.triggered.connect(self.importStringPath)
 
     def defineButton(self):
         """
@@ -859,6 +994,13 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.pushButton_previous_crease.clicked.connect(self.choosePreviousCrease)
         self.radioButton_use_default.clicked.connect(self.setBiasAsDefault)
         self.radioButton_expert_mode.clicked.connect(self.setBiasAsExpertModified)
+        self.pushButton_next_line.clicked.connect(self.chooseNextKlLine)
+        self.pushButton_previous_line.clicked.connect(self.choosePreviousKlLine)
+        self.pushButton_previous_kl.clicked.connect(self.choosePreviousKl)
+        self.pushButton_next_kl.clicked.connect(self.chooseNextKl)
+        self.pushButton_previous_crease_sequence.clicked.connect(self.choosePreviousCreaseSequence)
+        self.pushButton_next_crease_sequence.clicked.connect(self.chooseNextCreaseSequence)
+        self.radioButton_hard_crease.clicked.connect(self.changeHard)
 
     def defineSpinbox(self):
         """
@@ -879,6 +1021,12 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.horizontal_folding_slider.valueChanged.connect(self.changeFoldingPercent)
         self.slider_flag.valueChanged.connect(self.changeFlag)
         self.doubleSpinBox_expert_mode.valueChanged.connect(self.changeUnitBias)
+        self.doubleSpinBox_length.valueChanged.connect(self.changeKlLength)
+        self.doubleSpinBox_sector_angle.valueChanged.connect(self.changeKlSectorAngle)
+        self.spinBox_level_value.valueChanged.connect(self.changeLevel)
+        self.doubleSpinBox_coeff_value.valueChanged.connect(self.changeCoeff)
+        self.spinBox_recover_level_value.valueChanged.connect(self.changeRecoverLevel)
+        self.doubleSpinBox_hard_angle_value.valueChanged.connect(self.changeHardAngle)
 
     def design(self):
         """
@@ -1028,8 +1176,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                             new_line_list.append(new_line)
                         self.lines += new_line_list
                     else:
-                        self.kps += kp
-                        self.lines += line
+                        self.addKp(kp)
+                        self.addCrease(line)
                     u = data[0].getUnits(connection=True)
                     self.unit_number.append(len(u))
                     if self.add_hole_mode:
@@ -1047,10 +1195,12 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                         for k in range(0, row_data_length):
                             unit_id = k + j * row_data_length
                             kp = data[unit_id].getKeypoint()
-                            self.kps += kp
+                            # self.addKp(kp)
+                            self.addKp(kp)
                             line = data[unit_id].getLine()
                             record_body_line = data[unit_id].getLineConnectToBody()
-                            self.lines += line
+                            # self.addCrease(line)
+                            self.addCrease(line)
                             body_line += record_body_line
                             if self.add_hole_mode:
                                 if k >= 1:
@@ -1068,8 +1218,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                     line = data[0].getLine()
                     u = data[0].getUnits()
 
-                    self.kps += kp
-                    self.lines += line
+                    self.addKp(kp)
+                    self.addCrease(line)
                     self.unit_number.append(len(u))
                     if self.add_hole_mode:
                         for ele in u:
@@ -1089,6 +1239,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 if self.expert_mode:
                     self.chooseUnit(self.choose_unit_id)
                     self.chooseCrease(self.choose_crease_id)
+                if self.edit_sequence_mode:
+                    self.chooseCreaseSequence(self.choose_crease_sequence_id)
                 # UnitPackParser
                 
                 
@@ -1140,8 +1292,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         @ progress: on road
         @ spec: add packed-data parser
         """
-        self.storage.clear()
+        
         if json_type == self.KL_JSON:
+            self.storage.clear()
+            self.add_bias_flag.clear()
             self.file_type = "KL"
             origin_list = input_json['origin']
             add_width_flag_list = input_json['add_width']
@@ -1359,6 +1513,13 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 self.toPixel(ele[START]), self.toPixel(ele[END]), 
                 ele.getType(), hard=ele.hard
             ) for ele in unit.getCrease()]
+        
+        if self.edit_sequence_mode:
+            line = self.lines[self.choose_crease_sequence_id]
+            highlight_crease_sequence = Crease(
+                self.toPixel(line[START]), self.toPixel(line[END]), 
+                line.getType(), hard=line.hard
+            )
 
         if theme == 0:
             self.pixmap.fill(QColor(255, 255, 255))
@@ -1447,17 +1608,33 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                     self.painter.drawPolygon(self.generatePolygonByCenter(kp[0], self.connection_radius))
 
         # draw strings
+        color = QColor(190, 167, 219)
         for ele in self.pixel_string_kps:
-            if ele[2] == BOTTOM:
-                self.painter.setPen(QPen(QColor(216, 64, 216), round(line_weight / 2 + 0.5), Qt.DashLine))
-                self.painter.drawLine(ele[START][X], ele[START][Y], ele[END][X], ele[END][Y])
-            elif ele[2] == TOP:
-                self.painter.setPen(QPen(QColor(216, 64, 216), round(line_weight / 2 + 0.5), Qt.SolidLine))
-                self.painter.drawLine(ele[START][X], ele[START][Y], ele[END][X], ele[END][Y])
-            else:
-                pixel_width = ele[3] / 2.0 * self.current_pixel_scale
-                self.painter.setPen(QPen(QColor(216, 64, 216), round(line_weight / 2 + 0.5), Qt.SolidLine))
-                self.painter.fillRect(int(ele[START][X] - pixel_width), int(ele[START][Y] - pixel_width), int(pixel_width * 2), int(pixel_width * 2), QColor(216, 64, 216))
+            if ele[4] != self.choose_string_id:
+                if ele[2] == BOTTOM:
+                    self.painter.setPen(QPen(color, round(line_weight / 2 + 0.5), Qt.DashLine))
+                    self.painter.drawLine(ele[START][X], ele[START][Y], ele[END][X], ele[END][Y])
+                elif ele[2] == TOP:
+                    self.painter.setPen(QPen(color, round(line_weight / 2 + 0.5), Qt.SolidLine))
+                    self.painter.drawLine(ele[START][X], ele[START][Y], ele[END][X], ele[END][Y])
+                else:
+                    pixel_width = ele[3] / 2.0 * self.current_pixel_scale
+                    self.painter.setPen(QPen(color, round(line_weight / 2 + 0.5), Qt.SolidLine))
+                    self.painter.fillRect(int(ele[START][X] - pixel_width), int(ele[START][Y] - pixel_width), int(pixel_width * 2), int(pixel_width * 2), color)
+        
+        color = QColor(86, 10, 180)
+        for ele in self.pixel_string_kps:
+            if ele[4] == self.choose_string_id:
+                if ele[2] == BOTTOM:
+                    self.painter.setPen(QPen(color, round(line_weight / 2 + 0.5), Qt.DashLine))
+                    self.painter.drawLine(ele[START][X], ele[START][Y], ele[END][X], ele[END][Y])
+                elif ele[2] == TOP:
+                    self.painter.setPen(QPen(color, round(line_weight / 2 + 0.5), Qt.SolidLine))
+                    self.painter.drawLine(ele[START][X], ele[START][Y], ele[END][X], ele[END][Y])
+                else:
+                    pixel_width = ele[3] / 2.0 * self.current_pixel_scale
+                    self.painter.setPen(QPen(color, round(line_weight / 2 + 0.5), Qt.SolidLine))
+                    self.painter.fillRect(int(ele[START][X] - pixel_width), int(ele[START][Y] - pixel_width), int(pixel_width * 2), int(pixel_width * 2), color)
 
         # draw highlight crease and unit
         if self.expert_mode:
@@ -1466,6 +1643,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 self.painter.drawLine(crease[START][X], crease[START][Y], crease[END][X], crease[END][Y])
             self.painter.setPen(QPen(QColor(255, 223, 0), round(line_weight), Qt.SolidLine))
             self.painter.drawLine(highlight_crease[START][X], highlight_crease[START][Y], highlight_crease[END][X], highlight_crease[END][Y])
+        
+        if self.edit_sequence_mode:
+            self.painter.setPen(QPen(QColor(255, 223, 0), round(line_weight), Qt.SolidLine))
+            self.painter.drawLine(highlight_crease_sequence[START][X], highlight_crease_sequence[START][Y], highlight_crease_sequence[END][X], highlight_crease_sequence[END][Y])
         
         self.draw_panel.setPixmap(self.pixmap)
         self.painter.end()
@@ -1511,6 +1692,39 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         else:
             self.process_bar.setValue(int(process * 100))
 
+    def editKl(self):
+        if self.expert_mode:
+            self.updateMessage("Please close the expert mode first...")
+            return
+        if self.edit_sequence_mode:
+            self.updateMessage("Please close the edit sequence mode first...")
+            return
+        find_kl = False
+        for i in range(len(self.storage)):
+            if type(self.storage[i][1]) == KinematicLine:
+                find_kl = True
+                break
+        if find_kl:
+            self.chooseKl(i)
+            self.chooseKlLine(0)
+            self.widget_edit_kl.setVisible(True)
+            self.edit_kl_mode = True
+        else:
+            self.edit_kl_mode = False
+            self.widget_edit_kl.setVisible(False)
+            self.updateMessage("No Kinematic Line are found.", "WARNING")
+
+    def editSequence(self):
+        if self.expert_mode:
+            self.updateMessage("Please close the expert mode first...")
+            return
+        if self.edit_kl_mode:
+            self.updateMessage("Please close the edit kl mode first...")
+            return
+        self.chooseCreaseSequence(0)
+        self.edit_sequence_mode = True
+        self.widget_edit_sequence.setVisible(True)
+       
     def endAddString(self):
         self.actionAdd_TSA_A_point.setEnabled(False)
         self.updateMessage("Add-string mode disabled...")
@@ -1518,6 +1732,12 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.string_total_information.append(self.a_string)
 
     def expertModeEnable(self):
+        if self.edit_kl_mode:
+            self.updateMessage("Please close the edit kl mode first...")
+            return
+        if self.edit_sequence_mode:
+            self.updateMessage("Please close the edit sequence mode first...")
+            return
         if self.add_hole_mode:
             self.chooseUnit(0)
             self.chooseCrease(0)
@@ -1655,6 +1875,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.stl_writer.setThinMode(self.pref_pack['thin_mode'])
             self.stl_writer.setDbEnable(self.pref_pack['enable_db'])
             self.stl_writer.setPillarDisable(self.pref_pack['disable_pillars'])
+            self.stl_writer.border_nobias = not self.pref_pack['stl_asymmetry']
             connection_enabled = stl_dialog.getConnectionNeeded()
             board_enabled = stl_dialog.getBoardNeeded()
 
@@ -1962,7 +2183,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
 
                     self.stl_writer.setBoardHeight(self.pref_pack["layer"] * self.stl_writer.print_accuracy)
 
-                    hard_file_path = file_path.split('.')[0] + '_H.stl'
+                    hard_file_path = file_path.split('.')[0] + '.stl'
 
                     self.stl_writer.calculateTriPlaneForAllUnit(inner=False)
 
@@ -2027,6 +2248,41 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
     def exportAsStl(self):
         return
 
+    def exportDescriptionData(self, file_path):
+        if file_path == False:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                "Save the description data", 
+                ".", 
+                "json files (*.json)"
+            ) 
+        if file_path == '':
+            self.updateMessage("Cancel exporting design result")
+        else:
+            # the units is compatible with the left-hand coodination
+            s = {
+                "kps": self.kps,
+                "lines": [line.points for line in self.lines],
+                "units": [unit.getSeqPoint() for unit in self.units],
+                "line_features": [{
+                    "type": line.getType(),
+                    "level": line.level,
+                    "coeff": line.coeff,
+                    "recover_level": line.recover_level,
+                    "hard": line.hard,
+                    "hard_angle": line.hard_angle
+                } for line in self.lines],
+                "strings": {
+                    "type": [[self.string_total_information[i][j].point_type for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))],
+                    "id": [[self.string_total_information[i][j].id for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))],
+                    "reverse": [[self.string_total_information[i][j].dir for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))]
+                }
+            }
+
+            with open(file_path, 'w', encoding="utf-8") as f:
+                json.dump(s, f, indent=4)
+            self.updateMessage("Succeed to save the description data at " + file_path)
+
     def generatePolygonByCenter(self, center, radius):
         """
         @ function: generate polygon for drawing
@@ -2047,10 +2303,6 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             )
         polygon = QPolygon(points)
         return polygon
-    
-    def getUnitWithKps(self, unit_id):
-        unit = self.units[unit_id]
-        return unit.getSeqPoint()
     
     def initialize(self):
         self.kps = []                           # keypoints
@@ -2141,6 +2393,27 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             except:
                 self.updateState("Failed to load json file, check if it is in correct format", self.state, "ERROR")
         
+    def importStringPath(self, not_call_openfile_dialog=False, file_name=''):
+        if not not_call_openfile_dialog:
+            path, _ = QFileDialog.getOpenFileName(
+                self, 
+                "Choose a string path", 
+                ".", 
+                "Json files (*.json);;All Files (*.*)"
+            )
+        else:
+            path = file_name
+        if path == '':
+            self.updateState("Cancel loading file", self.state)
+        else:
+            try:
+                with open(path, 'r', encoding='utf-8') as fw:
+                    input_json = json.load(fw)
+                self.dictToStorage(input_json, self.THREADING_METHOD)
+                self.updateState("Current strings", self.DESIGN_FINISH)
+            except:
+                self.updateState("Failed to load json file, check if it is in correct format", self.state, "ERROR")
+
     def keyPressEvent(self, event):
         """
         @ function: exactly move the pixmap
@@ -2214,9 +2487,17 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                     self.rotation[self.choose_origami_index] -= 1.0 / 180.0 * math.pi
                     self.enable_design = True
             elif event.key() == Qt.Key_E:
-                if self.choose_origami_flag: 
-                    self.rotation[self.choose_origami_index] += 1.0 / 180.0 * math.pi
-                    self.enable_design = True
+                if event.modifiers() & Qt.ShiftModifier:
+                    self.key = "Shift+E"
+                    self.exportAllAsStl()
+                else:
+                    if self.choose_origami_flag: 
+                        self.rotation[self.choose_origami_index] += 1.0 / 180.0 * math.pi
+                        self.enable_design = True
+            elif event.key() == Qt.Key_S:
+                if event.modifiers() & Qt.ShiftModifier:
+                    self.key = "Shift+S"
+                    self.saveResult()
             elif event.key() == Qt.Key_D:
                 # self.enable_design = True
                 if len(self.strings):
@@ -2248,9 +2529,17 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 self.choose_hole_flag = False
                 self.choose_origami_flag = False
                 self.expert_mode = False
+                self.edit_kl_mode = False
+                self.edit_sequence_mode = False
                 self.choose_unit_id = 0
                 self.choose_crease_id = 0
+                self.choose_kl_id = 0
+                self.choose_line_id = 0
+                self.choose_crease_sequence_id = 0
+                self.choose_string_id = -1
                 self.widget.setVisible(False)
+                self.widget_edit_kl.setVisible(False)
+                self.widget_edit_sequence.setVisible(False)
                 self.updateMessage("Back to normal view...")
             elif event.key() == Qt.Key_Delete:
                 # self.enable_design = True
@@ -2312,12 +2601,20 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                     
             valid_crease_list = self.additional_line_maker.valid_crease_list
             for i in range(len(valid_crease_list)):
-                if pointOnCrease([self.real_x, self.real_y], valid_crease_list[i], 0.5):
+                if pointOnCrease([self.real_x, self.real_y], valid_crease_list[i], 2):
                     if i not in self.hard_crease_index:
                         self.hard_crease_index.append(i)
+                        self.enable_design = True
                     else:
                         del(self.hard_crease_index[self.hard_crease_index.index(i)])
+                        self.enable_design = True
                     break
+                
+            for i in range(len(self.strings)):
+                if self.strings[i].type != PASS:
+                    if pointOnCrease([self.real_x, self.real_y], Crease(self.strings[i].start_point, self.strings[i].end_point, BORDER), 2):
+                        self.choose_string_id = self.strings[i].id
+                        break
 
     def mouseMoveEvent(self, event) -> None:
         """
@@ -2422,7 +2719,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.add_hole_mode = self.checkBox_add_hole_mode.isChecked()
         if self.add_hole_mode:
             self.add_hole_mode = False
-            self.bias_val, ok = QInputDialog.getDouble(self, "Bias setting", "Please set the bias", 0.3, 0.3, self.bias_max, decimals=2)
+            self.bias_val, ok = QInputDialog.getDouble(self, "Bias setting", "Please set the bias", 0.01, 0.01, self.bias_max, decimals=2)
             if ok:
                 self.add_hole_mode = True
                 self.show_additional_crease = True
@@ -2457,197 +2754,148 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.updateMessage("Design mode enabled...")
 
     def onDesignThreadingMethod(self):
-        if self.enable_output_stl:
-            self.updateMessage("A stl file is being outputed, please wait...")
-            return
-        if self.enable_cdf_curve_fitting:
-            self.updateMessage("A cdf process is running, please wait...")
-            return
-        if self.enable_phys_data_collecting:
-            self.updateMessage("A physical simulation is running, please wait...")
-            return
-        if self.enable_mcts:
-            self.updateMessage("A MCTS Searching process is running, please wait...")
-            return
+        pass
+        # if self.enable_output_stl:
+        #     self.updateMessage("A stl file is being outputed, please wait...")
+        #     return
+        # if self.enable_cdf_curve_fitting:
+        #     self.updateMessage("A cdf process is running, please wait...")
+        #     return
+        # if self.enable_phys_data_collecting:
+        #     self.updateMessage("A physical simulation is running, please wait...")
+        #     return
+        # if self.enable_mcts:
+        #     self.updateMessage("A MCTS Searching process is running, please wait...")
+        #     return
         
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, 
-            "Specify the filename of the simulation result"
-        ) 
+        # file_path, _ = QFileDialog.getSaveFileName(
+        #     self, 
+        #     "Specify the filename of the simulation result"
+        # ) 
 
-        if file_path == '':
-            self.updateState("Cancel outputing mcts results.", self.state)
-            return
-        else:
-            if not os.path.exists(file_path):
-                os.makedirs(file_path)
-        self.string_file_path = file_path
+        # if file_path == '':
+        #     self.updateState("Cancel outputing mcts results.", self.state)
+        #     return
+        # else:
+        #     if not os.path.exists(file_path):
+        #         os.makedirs(file_path)
+        # self.string_file_path = file_path
 
-        self.enable_mcts = True
+        # self.enable_mcts = True
 
-        batch_size = 8
+        # batch_size = 4
         
-        self.exportAsDxf("./dxfResult/phys_sim.dxf")
+        # self.exportAsDxf("./dxfResult/phys_sim.dxf")
 
-        max_edge = 0
-        for ele in self.units:
-            edge = len(ele.crease)
-            if edge > max_edge:
-                max_edge = edge
+        # max_edge = 0
+        # for ele in self.units:
+        #     edge = len(ele.crease)
+        #     if edge > max_edge:
+        #         max_edge = edge
 
-        # 获取点和线段信息
-        dxfg = DxfDirectGrabber()
-        dxfg.readFile("./dxfResult/phys_sim.dxf")
+        # # 获取点和线段信息
+        # dxfg = DxfDirectGrabber()
+        # dxfg.readFile("./dxfResult/phys_sim.dxf")
 
-        # 获取折纸单元信息
-        unit_parser = UnitPackParserReverse(
-                        tsp=[0.0, 0.0],
-                        kps=dxfg.kps,
-                        lines=dxfg.lines,
-                        lines_type=dxfg.lines_type
-                    )
+        # # 获取折纸单元信息
+        # unit_parser = UnitPackParserReverse(
+        #                 tsp=[0.0, 0.0],
+        #                 kps=dxfg.kps,
+        #                 lines=dxfg.lines,
+        #                 lines_type=dxfg.lines_type
+        #             )
 
-        unit_parser.setMaximumNumberOfEdgeInAllUnit(max_edge) #For every units, there exists at most 4 edges
-        input_units = unit_parser.getUnits()
+        # unit_parser.setMaximumNumberOfEdgeInAllUnit(max_edge) #For every units, there exists at most 4 edges
+        # input_units = unit_parser.getUnits()
 
-        # calculate max length of view
-        max_size = unit_parser.getMaxDistance()
-        total_bias = unit_parser.getTotalBias(units=self.units)
+        # # calculate max length of view
+        # max_size, max_x, max_y = unit_parser.getMaxDistance()
+        # total_bias = unit_parser.getTotalBias(units=input_units)
 
-        new_lines = []
-        for i in range(len(self.lines)):
-            line = self.lines[i]
-            if distance(line[START], line[END]) < 1e-5:
-                continue
-            not_duplicate = True
-            for j in range(i):
-                other_line = self.lines[j]
-                if (distance(line[START], other_line[START]) < 1e-5 and distance(line[END], other_line[END]) < 1e-5) or (distance(line[START], other_line[END]) < 1e-5 and distance(line[END], other_line[START]) < 1e-5):
-                    not_duplicate = False
-                    break
-            if not not_duplicate:
-                continue
-            new_lines.append(line)
+        # # new_lines = []
+        # # for i in range(len(self.lines)):
+        # #     line = self.lines[i]
+        # #     if distance(line[START], line[END]) < 1e-5:
+        # #         continue
+        # #     not_duplicate = True
+        # #     for j in range(i):
+        # #         other_line = self.lines[j]
+        # #         if (distance(line[START], other_line[START]) < 1e-5 and distance(line[END], other_line[END]) < 1e-5) or (distance(line[START], other_line[END]) < 1e-5 and distance(line[END], other_line[START]) < 1e-5):
+        # #             not_duplicate = False
+        # #             break
+        # #     if not not_duplicate:
+        # #         continue
+        # #     new_lines.append(line)
 
-        # 构建蒙特卡洛搜索树
-        mcts = MCTS(self.units, new_lines, self.kps, self.pref_pack['tsa_radius'], self.pref_pack["tsa_resolution"], origami_size = [self.origami_length, self.origami_width], tsa_number=1, string_root_number=2)
+        # # 构建蒙特卡洛搜索树
+        # mcts = MCTS_Simplified(self.units, unit_parser.new_lines, self.kps, self.pref_pack['tsa_radius'], self.pref_pack["tsa_resolution"], origami_size = [self.origami_length, self.origami_width], string_number=2, generation=self.limitation["mcts_epoch"])
         
-        if not self.pref_pack['debug_mode']:
-            self.mcts_thread = MCTSThread(mcts, batch_size, [self.origami_length, self.origami_width], self.pref_pack, self.limitation, self.units, max_edge, input_units, max_size, total_bias, file_path)
-            self.mcts_thread._emit.connect(self.drawProcess)
-            self.mcts_thread.start()
-            return
-        else:
-            scores = []
-            for i in range(self.limitation["mcts_epoch"]):
-                methods, initial_method = mcts.ask(batch_size)
+        # if not self.pref_pack['debug_mode']:
+        #     self.mcts_thread = MCTSThread(mcts, batch_size, [self.origami_length, self.origami_width], self.pref_pack, self.limitation, self.units, max_edge, input_units, max_size, total_bias, file_path)
+        #     self.mcts_thread._emit.connect(self.drawProcess)
+        #     self.mcts_thread.start()
+        #     return
+        # else:
+        #     scores = []
+        #     for i in range(self.limitation["mcts_epoch"]):
+        #         methods, initial_method = mcts.ask(batch_size, i)
 
-                all_batch_string_total_information = []
-                a_number_list = []
+        #         try:
+        #             with open(os.path.join(self.file_path, "current.json"), 'w', encoding="utf-8") as f:
+        #                 json.dump(initial_method[0], f, indent=4)
+        #         except:
+        #             pass
 
-                valid_number = 0
+        #         print("Debug mode, using 1 process")
+        #         reward_list = [0.0 for _ in range(len(methods))]
 
-                for j in range(len(methods)):
-                    method = methods[j]
-                    a_number = 0
-                    self.string_total_information = []
+        #         ori_sim = OrigamiSimulator(use_gui=False)
 
-                    for string in method:
-                        new_string = []
-                        for tsa_point in string:
-                            tp = TSAPoint()
-                            if tsa_point[0] == 'A':
-                                a_number += 1
-                                origami_size = [self.origami_length, self.origami_width]
-                                tp.point = [
-                                    self.pref_pack["tsa_radius"] * math.cos(tsa_point[1] / self.pref_pack["tsa_resolution"] * 2 * math.pi) + origami_size[X] / 2.0,
-                                    self.pref_pack["tsa_radius"] * math.sin(tsa_point[1] / self.pref_pack["tsa_resolution"] * 2 * math.pi) + origami_size[Y] / 2.0
-                                ]
-                            else:
-                                tp.point = self.units[tsa_point[1]].getCenter()
-                            tp.point_type = tsa_point[0]
-                            tp.id = tsa_point[1]
-                            tp.dir = tsa_point[2]
+        #         ori_sim.string_total_information = methodToTotalInformation(methods[0], mcts.P_points, mcts.O_points)
+        #         ori_sim.pref_pack = self.pref_pack
+        #         ori_sim.startOnlyTSA(input_units, max_size, total_bias, max_edge)
+        #         ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
+        #         ori_sim.initializeRunning()
 
-                            new_string.append(tp)
-                        self.string_total_information.append(new_string)
-                    
-                    if a_number < 3: # 非法
-                        all_batch_string_total_information.append(None)
-                        a_number_list.append(a_number)
-                        print("Batch: " + str(j) + ", Value: Error A number, A number: " + str(a_number))
-                    else:
-                        all_batch_string_total_information.append(self.string_total_information)
-                        a_number_list.append(a_number)
-                        valid_number += 1
+        #         for j in range(len(methods)):
+        #             reward_list[j] = (len(methods[j]["id"][0]) + len(methods[j]["id"][1])) / 18. + (methods[j]["id"][0][0] + methods[j]["id"][1][0]) / 48.
 
-                # else: # 单线程
-                print("Only 1 valid case, using 1 process")
-                reward_list = [0.0 for j in range(len(methods))]
-                for j in range(len(methods)):
-                    if a_number_list[j] >= 3: # ok to simulate
-                        reward_list[j] = np.random.random()
-                        
-                maximum_reward = max(reward_list)
-                maximum_reward_index = reward_list.index(maximum_reward)
-                scores.append(maximum_reward)
+        #         mcts.tell(reward_list)
 
-                print("Epoch: " + str(i) + ", Max Value: " + str(maximum_reward) + ", Total batch size: " + str(len(reward_list))) # + ", A number list: " + str(a_number_list
+        #         maximum_reward = max(reward_list)
+        #         maximum_reward_index = reward_list.index(maximum_reward)
+        #         scores.append(maximum_reward)
 
-                mcts.tell(reward_list)
+        #         print("Epoch: " + str(i) + ", Max Value: " + str(maximum_reward) + ", Total batch size: " + str(len(reward_list)))
 
-                best_method = methods[maximum_reward_index]
-                total_string = {
-                    "type": [],
-                    "id": [],
-                    "reverse": [],
-                    "score": maximum_reward
-                }
-                for string in best_method:
-                    string_point_type = []
-                    string_id = []
-                    string_reverse = []
-                    for tsa_point in string:
-                        string_point_type.append(tsa_point[0])
-                        string_id.append(int(tsa_point[1]))
-                        string_reverse.append(int(tsa_point[2]))
-                    total_string["type"].append(string_point_type)
-                    total_string["id"].append(string_id)
-                    total_string["reverse"].append(string_reverse)
+        #         best_method = methods[maximum_reward_index]
+        #         total_string = deepcopy(best_method)
+        #         total_string["score"] = maximum_reward
                 
-                try:
-                    with open(os.path.join(file_path, "result_epoch_" + str(i) + "_score_" + str(round(maximum_reward, 2))) + ".json", 'w', encoding="utf-8") as f:
-                        json.dump(total_string, f, indent=4)
-                except:
-                    pass
+        #         try:
+        #             with open(os.path.join(file_path, "result_epoch_" + str(i) + "_score_" + str(round(maximum_reward, 2))) + ".json", 'w', encoding="utf-8") as f:
+        #                 json.dump(total_string, f, indent=4)
+        #         except:
+        #             pass
                 
-                score_list = {
-                    "score": scores
-                }
+        #         score_list = {
+        #             "score": scores
+        #         }
 
-                try:
-                    with open(os.path.join(file_path, "score.json"), 'w', encoding="utf-8") as f:
-                        json.dump(score_list, f, indent=4)
-                except:
-                    pass
+        #         try:
+        #             with open(os.path.join(file_path, "score.json"), 'w', encoding="utf-8") as f:
+        #                 json.dump(score_list, f, indent=4)
+        #         except:
+        #             pass
             
-            print("END TRAINING!")
-            self.enable_mcts = False
+        #     print("END TRAINING!")
+        #     self.enable_mcts = False
 
     def oneClickAddHoles(self):
         if self.add_hole_mode:
             for u in self.units:
-                seq_point = u.getSeqPoint()
-                x = 0
-                y = 0
-                n = 0
-                for point in seq_point:
-                    x += point[X]
-                    y += point[Y]
-                    n += 1
-                x = x / n
-                y = y / n
-                self.addHoleToUnitUsingRealAxis(x, y)
+                center = u.getCenter()
+                self.addHoleToUnitUsingRealAxis(center[X], center[Y])
             self.updateMessage("Succeed in adding holes in the center of each unit...")
         else:
             self.updateMessage("Add-hole mode is not enabled, please enable add_hole mode...")
@@ -2696,7 +2944,6 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.updateMessage("Cancel exporting physical simulation result")
         else:
             self.enable_phys_data_collecting = True
-            self.exportAsDxf("./dxfResult/phys_sim.dxf")
 
             max_edge = 0
             for ele in self.units:
@@ -2704,66 +2951,150 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 if edge > max_edge:
                     max_edge = edge
 
-            ori_sim = OrigamiSimulator(use_gui=False, debug_mode=self.pref_pack["debug_mode"])
-            # set string parameters
-            ori_sim.strings = deepcopy(self.strings)
-            ori_sim.string_total_information = deepcopy(self.string_total_information)
-            ori_sim.pref_pack = deepcopy(self.pref_pack)
+            if not self.full_description_mode:
+                from phys_sim12 import OrigamiSimulator
+                self.exportAsDxf("./dxfResult/phys_sim.dxf")
 
-            ori_sim.start("phys_sim", max_edge, ori_sim.TSA_SIM)
-            ori_sim.enable_tsa_rotate = ori_sim.rotation_step
-            ori_sim.initializeRunning()
+                # 获取点和线段信息
+                dxfg = DxfDirectGrabber()
+                dxfg.readFile("./dxfResult/phys_sim.dxf")
+
+                # 获取折纸单元信息
+                unit_parser = UnitPackParserReverse(
+                                tsp=[0.0, 0.0],
+                                kps=dxfg.kps,
+                                lines=dxfg.lines,
+                                lines_type=dxfg.lines_type
+                            )
+
+                unit_parser.setMaximumNumberOfEdgeInAllUnit(max_edge) #For every units, there exists at most 4 edges
+                input_units = unit_parser.getUnits()
+
+                # calculate max length of view
+                max_size, max_x, max_y = unit_parser.getMaxDistance()
+                total_bias = unit_parser.getTotalBias(units=input_units)
+
+                ori_sim = OrigamiSimulator(use_gui=False)
+
+                # ori_sim.string_total_information = deepcopy(self.string_total_information)
+                ori_sim.pref_pack = self.pref_pack
+                ori_sim.startOnlyTSA(input_units, max_size, total_bias, max_edge)
+                ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
+                ori_sim.initializeRunning()
+            else:
+                from phys_sim17 import OrigamiSimulator
+                self.exportDescriptionData('./descriptionData/phys_sim.json')
+                ori_sim = OrigamiSimulator(use_gui=False, fast_simulation=self.pref_pack["fast_simulation_mode"])
+
+                # ori_sim.string_total_information = deepcopy(self.string_total_information)
+                ori_sim.pref_pack = deepcopy(self.pref_pack)
+                ori_sim.start("phys_sim", max_edge, ori_sim.TSA_SIM)
+                ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
+                ori_sim.fast_simulation_mode = False
+                ori_sim.initializeRunning()
+            
+            
+            # ori_sim = OrigamiSimulator(use_gui=False, debug_mode=self.pref_pack["debug_mode"])
+            # # set string parameters
+            # # ori_sim.strings = deepcopy(self.strings)
+            # ori_sim.string_total_information = deepcopy(self.string_total_information)
+            # ori_sim.pref_pack = deepcopy(self.pref_pack)
+
+            # ori_sim.start("phys_sim", max_edge, ori_sim.TSA_SIM)
+            # ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
+            # ori_sim.initializeRunning()
             
             if not self.pref_pack["debug_mode"]:
                 self.phys_data_collecting_thread = ThreadingMethodSearchingThread(file_path, ori_sim)
                 self.phys_data_collecting_thread._emit.connect(self.drawProcess)
                 self.phys_data_collecting_thread.start()
             else:
+                step = 1
                 while 1:
                     ori_sim.step()
-                    if ori_sim.folding_angle_reach_pi[0] or math.isnan(ori_sim.total_energy[0]) or (ori_sim.current_t > 4.0 and not ori_sim.can_rotate) or (ori_sim.current_t > 20.0 and ori_sim.can_rotate):
-                        break
+                    
+                    if ori_sim.folding_angle_reach_pi[0] or (ori_sim.dead_count >= 500 and not ori_sim.can_rotate) or (ori_sim.dead_count >= 200 and ori_sim.can_rotate):
+                        if ori_sim.sim_mode == ori_sim.TSA_SIM and ori_sim.can_rotate:
+                            if ori_sim.recorded_folding_percent[-1] > FOLDING_MAXIMUM:
+                                break
+                            else:
+                                if ori_sim.recorded_folding_percent[-1] < np.mean(np.array(ori_sim.recorded_folding_percent[-51: -1])):
+                                    break
+                        else:
+                            break
+                    step += 1
+
+                all_dis = {
+                    "control_string_decrease": [],
+                    "string_decrease_each": [],
+                    "max_force": [],
+                    "folding_percent": [],
+                    "max_folding_percent": [],
+                    "min_folding_percent": [],
+                    "time": []
+                }
+
+                all_dis["control_string_decrease"] = ori_sim.recorded_string_decrease_length_control
+                all_dis["string_decrease_each"] = ori_sim.recorded_string_decrease_length
+                all_dis["folding_percent"] = ori_sim.recorded_folding_percent
+                all_dis["max_folding_percent"] = ori_sim.recorded_maximum_folding_percent
+                all_dis["min_folding_percent"] = ori_sim.recorded_minimum_folding_percent
+                all_dis["max_force"] = ori_sim.recorded_max_force
+                all_dis["time"] = ori_sim.recorded_t
+
+                with open(file_path, 'w', encoding="utf-8") as f:
+                    json.dump(all_dis, f, indent=4)
                 self.drawProcess(1.0)
                 self.enable_phys_data_collecting = False
 
     def physicalSimulation(self):
-        self.exportAsDxf("./dxfResult/phys_sim.dxf")
-
         max_edge = 0
         for ele in self.units:
             edge = len(ele.crease)
             if edge > max_edge:
                 max_edge = edge
+        if not self.full_description_mode:
+            from phys_sim12 import OrigamiSimulator
+            self.exportAsDxf("./dxfResult/phys_sim.dxf")
 
-        ori_sim = OrigamiSimulator(use_gui=True, debug_mode=self.pref_pack['debug_mode'])
-        # set string parameters
-        ori_sim.strings = deepcopy(self.strings)
-        ori_sim.string_total_information = deepcopy(self.string_total_information)
-        ori_sim.pref_pack = deepcopy(self.pref_pack)
-        
-        ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
+            ori_sim = OrigamiSimulator(use_gui=True, debug_mode=self.pref_pack['debug_mode'])
+            # set string parameters
+            # ori_sim.strings = deepcopy(self.strings)
+            ori_sim.string_total_information = deepcopy(self.string_total_information)
+            ori_sim.pref_pack = deepcopy(self.pref_pack)
+            
+            ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
 
-        ori_sim.run()
+            ori_sim.run()
+        else:
+            from phys_sim17 import OrigamiSimulator
+            self.exportDescriptionData('./descriptionData/phys_sim.json')
+            ori_sim = OrigamiSimulator(use_gui=True, debug_mode=self.pref_pack['debug_mode'], fast_simulation=self.pref_pack["fast_simulation_mode"])
+            # ori_sim.string_total_information = deepcopy(self.string_total_information)
+            ori_sim.pref_pack = deepcopy(self.pref_pack)
+            ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
+            ori_sim.run(False, False)
 
     def physicalSimulationExplicit(self):
-        # --Physical Sim module for simulate the folding process of origami-- #
-        self.exportAsDxf("./dxfResult/phys_sim.dxf")
+        pass
+        # # --Physical Sim module for simulate the folding process of origami-- #
+        # self.exportAsDxf("./dxfResult/phys_sim.dxf")
 
-        max_edge = 0
-        for ele in self.units:
-            edge = len(ele.crease)
-            if edge > max_edge:
-                max_edge = edge
+        # max_edge = 0
+        # for ele in self.units:
+        #     edge = len(ele.crease)
+        #     if edge > max_edge:
+        #         max_edge = edge
 
-        ori_sim = OrigamiSimulatorE(use_gui=True, debug_mode=self.pref_pack['debug_mode'])
-        # set string parameters
-        ori_sim.strings = deepcopy(self.strings)
-        ori_sim.string_total_information = deepcopy(self.string_total_information)
-        ori_sim.pref_pack = deepcopy(self.pref_pack)
+        # ori_sim = OrigamiSimulatorE(use_gui=True, debug_mode=self.pref_pack['debug_mode'])
+        # # set string parameters
+        # # ori_sim.strings = deepcopy(self.strings)
+        # ori_sim.string_total_information = deepcopy(self.string_total_information)
+        # ori_sim.pref_pack = deepcopy(self.pref_pack)
         
-        ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
+        # ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
 
-        ori_sim.run()
+        # ori_sim.run()
 
     def plotJsonReadFile(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -2773,53 +3104,131 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             "Json files (*.json);;All Files (*.*)"
         )
         if path == '':
-            return None, None, None, None, False
+            return False, {}
         else:
             try:
                 with open(path, 'r', encoding='utf-8') as fw:
                     input_json = json.load(fw)
                 
-                tsa_turning_angle_list = input_json["tsa_turning_angle"]
-                energy_list = input_json["energy"]
-                dead_count_list = input_json["dead_count"]
-
-                list_length = len(energy_list)
-                x_list = [x for x in range(list_length)]
-                return np.array(x_list), np.array(tsa_turning_angle_list), np.array(energy_list), np.array(dead_count_list), True
+                return True, input_json
             except:
                 pass
 
     def plotJson(self):
         plt.rcParams['font.sans-serif'] = 'Times new roman'
-        fig, ax = plt.subplots()
-
-        ax.set_xmargin(0)
-        ax.set_ymargin(0)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-
-        my_colors = mpl.cm.YlGnBu(np.arange(150) / 150.0)
-
-        length_list = []
+        fig, ax = plt.subplots(2, 2, sharex=False, sharey=False, figsize=(10, 9))
+        data_number = 0
+        maximum_force = 0.
         while 1:
-            x, y1, y2, y3, goon = self.plotJsonReadFile()
-            if not goon:
+            ok, data = self.plotJsonReadFile()
+            if not ok:
                 break
             else:
+                data_number += 1
+                if data_number == 1:
+                    rgb = (0.2, 0.01, 0.5)
+                elif data_number == 2:
+                    rgb = (0.5, 0.1, 0.6)
+                elif data_number == 3:
+                    rgb = (0.8, 0.3, 0.4)
+                else:
+                    rgb = (0.87, 0.6, 0.37)
+                # 0-0 folding-percent with current_time
+                ax[0][0].set_xmargin(0)
+                ax[0][0].set_ymargin(0)
+                ax[0][0].spines['top'].set_visible(False)
+                ax[0][0].spines['right'].set_visible(False)
 
-                l1, = ax.plot(y1, y2, 'g-')
-                y3_max = max(y3)
-                l2, = ax.plot(y1, [ele / y3_max for ele in y3], 'r-')
-   
-                length_list.append(len(x))
-        if len(length_list) == 0:
+                x = data["time"]
+                y = data["folding_percent"]
+                y_upperbound = data["max_folding_percent"]
+                y_lowerbound = data["min_folding_percent"]
+
+                ax[0][0].plot(x, y, color=rgb, linewidth=2, label='Exp. ' + str(data_number))
+                ax[0][0].fill_between(x, y_upperbound, y_lowerbound, alpha=0.3, facecolor=rgb, label='Bound - Exp. ' + str(data_number))
+
+                ax[0][0].set_ylim(-1, 1)
+                ax[0][0].set_xlabel("System time (s)", fontsize=13)
+                ax[0][0].set_ylabel("Folding percent", fontsize=13)
+                ax[0][0].tick_params(labelsize=13)
+
+                ax[0][0].set_title("Folding percent - System time", fontsize=16)
+                ax[0][0].legend()
+
+                # 0-1 max_force with current_time
+                ax[0][1].set_xmargin(0)
+                ax[0][1].set_ymargin(0)
+                ax[0][1].spines['top'].set_visible(False)
+                ax[0][1].spines['right'].set_visible(False)
+
+                x = data["time"]
+                y = data["max_force"]
+
+                ax[0][1].plot(x, y, color=rgb, linewidth=2, label='Exp. ' + str(data_number))
+
+                if max(y) * 1.1 > maximum_force:
+                    ax[0][1].set_ylim(0, max(y) * 1.1)
+                    maximum_force = max(y) * 1.1
+                ax[0][1].set_xlabel("System time (s)", fontsize=13)
+                ax[0][1].set_ylabel("Maximum force (N)", fontsize=13)
+                ax[0][1].tick_params(labelsize=13)
+
+                ax[0][1].set_title("Maximum force - System time", fontsize=16)
+                ax[0][1].legend()
+
+                # 1-0 control_decrease with each_decrease
+                ax[1][0].set_xmargin(0)
+                ax[1][0].set_ymargin(0)
+                ax[1][0].spines['top'].set_visible(False)
+                ax[1][0].spines['right'].set_visible(False)
+
+                x = data["time"]
+                y_standard = data["control_string_decrease"]
+                y_each = data["string_decrease_each"]
+
+                ax[1][0].plot(x, y_standard, color=rgb, linewidth=2, label='Exp. ' + str(data_number))
+                for ele in y_each:
+                    ax[1][0].plot(x, ele, color=rgb, linewidth=1, linestyle='--')
+
+                ax[1][0].set_ylim(0, y_standard[-1] * 1.1)
+                ax[1][0].set_xlabel("System time (s)", fontsize=13)
+                ax[1][0].set_ylabel("String length decrease (mm)", fontsize=13)
+                ax[1][0].tick_params(labelsize=13)
+
+                ax[1][0].set_title("String length decrease - System time", fontsize=16)
+                ax[1][0].legend()
+
+                # 1-1 Folding speed
+                ax[1][1].set_xmargin(0)
+                ax[1][1].set_ymargin(0)
+                ax[1][1].spines['top'].set_visible(False)
+                ax[1][1].spines['right'].set_visible(False)
+
+                x = data["control_string_decrease"]
+                y = data["folding_percent"]
+
+                ax[1][1].plot(x, y, color=rgb, linewidth=2, label='Exp. ' + str(data_number))
+
+                ax[1][1].set_ylim(-1, 1)
+                ax[1][1].set_xlabel("String length decrease (mm)", fontsize=13)
+                ax[1][1].set_ylabel("Folding percent", fontsize=13)
+                ax[1][1].tick_params(labelsize=13)
+
+                ax[1][1].set_title("Folding percent - String length decrease", fontsize=16)
+                ax[1][1].legend()
+            
+            if data_number == 4:
+                break
+
+        fig.subplots_adjust(left=0.08, right=0.93, top=0.93, bottom=0.08, wspace=0.29, hspace=0.29)
+        if data_number == 0:
             return
 
-        plt.xticks(fontsize=16)
-        plt.yticks(fontsize=16)
-        plt.ylim(0, 1)
+        # plt.xticks(fontsize=16)
+        # plt.yticks(fontsize=16)
+        # plt.ylim(0, 1)
         # plt.grid(axis='x')
-        plt.legend(handles=[l1, l2], labels=["Folding percent", "Max force (Normalized)"], loc="upper left", fontsize=16)
+        # plt.legend(handles=[l1, l2], labels=["Folding percent", "Max force (Normalized)"], loc="upper left", fontsize=16)
         # plt.ylim((0, 60))
         plt.show()
 
@@ -3234,6 +3643,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.actionAdd_TSA_A_point.setEnabled(False)
             self.actionExplicit_Simulation_E.setEnabled(False)
             self.actionExpert_Mode_E.setEnabled(False)
+            self.actionEdit_kl_E.setEnabled(False)
+            self.actionCalculate_Sequence.setEnabled(False)
+            self.actionEdit_Sequence_S.setEnabled(False)
+            self.actionImport_string_path.setEnabled(False)
 
             # Pack of connection
             self.checkBox_connection.setEnabled(False)
@@ -3273,6 +3686,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.actionAdd_Holes.setEnabled(False)
             self.actionExplicit_Simulation_E.setEnabled(False)
             self.actionExpert_Mode_E.setEnabled(False)
+            self.actionEdit_kl_E.setEnabled(False)
+            self.actionCalculate_Sequence.setEnabled(False)
+            self.actionEdit_Sequence_S.setEnabled(False)
+            self.actionImport_string_path.setEnabled(False)
 
             # Pack of connection
             self.checkBox_connection.setEnabled(False)
@@ -3312,6 +3729,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.actionAdd_Holes.setEnabled(True)
             self.actionExplicit_Simulation_E.setEnabled(True)
             self.actionExpert_Mode_E.setEnabled(True)
+            self.actionEdit_kl_E.setEnabled(True)
+            self.actionCalculate_Sequence.setEnabled(True)
+            self.actionEdit_Sequence_S.setEnabled(True)
+            self.actionImport_string_path.setEnabled(True)
 
             # Pack of connection
             self.checkBox_connection.setEnabled(True)
@@ -3395,41 +3816,38 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                         self.A4_half_length = self.A4_half_length / old_scale * self.current_pixel_scale
                         self.A4_half_width = self.A4_half_width / old_scale * self.current_pixel_scale
 
-def workerMultisim(mlist, method, pointer, a_number, pref_pack, max_edge, input_units, max_size, total_bias):
-    string_total_information = method
+# def workerMultisim(mlist, method, pointer, pref_pack, max_edge, input_units, max_size, total_bias):
+#     string_total_information = method
 
-    ori_sim = OrigamiSimulator(use_gui=False)
+#     ori_sim = OrigamiSimulator(use_gui=False)
 
-    ori_sim.string_total_information = string_total_information
-    ori_sim.pref_pack = pref_pack
+#     ori_sim.string_total_information = string_total_information
+#     ori_sim.pref_pack = pref_pack
 
-    ori_sim.startOnlyTSA(input_units, max_size, total_bias, max_edge)
-    ori_sim.enable_tsa_rotate = ori_sim.rotation_step
-    ori_sim.initializeRunning()
+#     ori_sim.startOnlyTSA(input_units, max_size, total_bias, max_edge)
+#     ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
+#     ori_sim.initializeRunning()
     
-    while ori_sim.dead_count < 500:
-        ori_sim.step()
-        if ori_sim.folding_angle_reach_pi[0] or math.isnan(ori_sim.total_energy[0]) or (ori_sim.current_t > 4.0 and not ori_sim.can_rotate) or (ori_sim.current_t > 20.0 and ori_sim.can_rotate):
-            break
-
-    if not ori_sim.can_rotate:
-        print("Batch: " + str(pointer) + ", Value: Error Actuation, A number: " + str(a_number))
-        mlist[pointer] = 0.0
-    else:
-        if math.isnan(ori_sim.total_energy[0]):
-            ori_sim.total_energy[0] = 0.0
-            value = 0.0
-        else:
-            energy_list = ori_sim.recorded_energy
-            avg_energy = sum(energy_list) / len(energy_list)
-            bonus = ori_sim.total_energy[0] / avg_energy - 2.0
-
-            value = ori_sim.total_energy[0] / ori_sim.total_energy_maximum
-            if value > 0.5:
-                value += 4. / (1. + bonus ** 2)
-        print("Batch: " + str(pointer) + ", Value: " + str(value) + ", A number: " + str(a_number))
+#     # while ori_sim.dead_count < 500:
+#     #     ori_sim.step()
+#     #     if ori_sim.folding_angle_reach_pi[0] or math.isnan(ori_sim.total_energy[0]) or (ori_sim.current_t > 4.0 and not ori_sim.can_rotate) or (ori_sim.current_t > 20.0 and ori_sim.can_rotate):
+#     #         break
+#     while 1:
+#         ori_sim.step()
+#         if ori_sim.folding_angle_reach_pi[0] or (ori_sim.dead_count >= 500 and not ori_sim.can_rotate) or (ori_sim.dead_count >= 200 and ori_sim.can_rotate):
+#             break
         
-        mlist[pointer] = value
+#     if not ori_sim.can_rotate:
+#         print("Batch: " + str(pointer) + ", Value: Error Actuation")
+#         mlist[pointer] = 0.0
+#     else:
+#         folding_percent = ori_sim.recorded_folding_percent[-1]
+#         folding_speed = (ori_sim.recorded_folding_percent[-1] - ori_sim.recorded_folding_percent[0]) / (ori_sim.recorded_t[-1] - ori_sim.recorded_t[0])
+#         value = folding_speed * folding_percent
+
+#         print("Batch: " + str(pointer) + ", Value: " + str(value))
+        
+#         mlist[pointer] = value
 
 # A thread for cdf-curve-fitting
 class CdfCurveFittingThread(QThread):
@@ -4005,234 +4423,146 @@ class StlOutputThread(QThread):
             print("No")
             self._emit.emit(1.0)
 
-class MCTSThread(QThread):
-    _emit = pyqtSignal(float)
+# class MCTSThread(QThread):
+#     _emit = pyqtSignal(float)
 
-    def __init__(self, mcts, batch_size, origami_size, pref_pack, limitation, units, max_edge, input_units, max_size, total_bias, file_path) -> None:
-        super().__init__()
-        self.mcts = mcts
-        self.batch_size = batch_size
-        self.origami_size = origami_size
-        self.pref_pack = pref_pack
-        self.limitation = limitation
-        self.units = units
-        self.max_edge = max_edge
-        self.input_units = input_units
-        self.max_size = max_size
-        self.total_bias = total_bias
-        self.file_path = file_path
-    
-    def run(self):
-        mcts = self.mcts
-        batch_size = self.batch_size
-        origami_size = self.origami_size
-        max_edge = self.max_edge
-        input_units = self.input_units
-        max_size = self.max_size
-        total_bias = self.total_bias
+#     def __init__(self, mcts, batch_size, origami_size, pref_pack, limitation, units, max_edge, input_units, max_size, total_bias, file_path) -> None:
+#         super().__init__()
+#         self.mcts = mcts
+#         self.batch_size = batch_size
+#         self.origami_size = origami_size
+#         self.pref_pack = pref_pack
+#         self.limitation = limitation
+#         self.units = units
+#         self.max_edge = max_edge
+#         self.input_units = input_units
+#         self.max_size = max_size
+#         self.total_bias = total_bias
+#         self.file_path = file_path
 
-        scores = []
-        for i in range(self.limitation["mcts_epoch"]):
-            methods, initial_method = mcts.ask(batch_size)
+#     def run(self):
+#         mcts = self.mcts
+#         batch_size = self.batch_size
+#         origami_size = self.origami_size
+#         max_edge = self.max_edge
+#         input_units = self.input_units
+#         max_size = self.max_size
+#         total_bias = self.total_bias
 
-            initial_total_string = {
-                "type": [],
-                "id": [],
-                "reverse": []
-            }
-            for string in initial_method:
-                string_point_type = []
-                string_id = []
-                string_reverse = []
-                for tsa_point in string:
-                    string_point_type.append(tsa_point[0])
-                    string_id.append(int(tsa_point[1]))
-                    string_reverse.append(int(tsa_point[2]))
-                initial_total_string["type"].append(string_point_type)
-                initial_total_string["id"].append(string_id)
-                initial_total_string["reverse"].append(string_reverse)
+#         scores = []
+#         for i in range(self.limitation["mcts_epoch"]):
+#             methods, initial_method = mcts.ask(batch_size, i)
 
-            try:
-                with open(os.path.join(self.file_path, "current.json"), 'w', encoding="utf-8") as f:
-                    json.dump(initial_total_string, f, indent=4)
-            except:
-                pass
+#             try:
+#                 with open(os.path.join(self.file_path, "current.json"), 'w', encoding="utf-8") as f:
+#                     json.dump(initial_method[0], f, indent=4)
+#             except:
+#                 pass
             
-            self._emit.emit(i / self.limitation["mcts_epoch"])
+#             self._emit.emit(i / self.limitation["mcts_epoch"])
 
-            all_batch_string_total_information = []
-            a_number_list = []
+#             valid_number = len(methods)
+#             if valid_number >= 1: 
+#                 print("There are " + str(valid_number) + " valid cases, using multi-process technology")
+#                 initial_fitness_list = []
+#                 for j in range(len(methods)):
+#                     initial_fitness_list.append(0.0)
 
-            valid_number = 0
+#                 mlist = multiprocessing.Manager().list(initial_fitness_list)
 
-            for j in range(len(methods)):
-                method = methods[j]
-                a_number = 0
-                self.string_total_information = []
+#                 p_list = []
 
-                for string in method:
-                    new_string = []
-                    for tsa_point in string:
-                        tp = TSAPoint()
-                        if tsa_point[0] == 'A':
-                            a_number += 1
-                            tp.point = [
-                                self.pref_pack["tsa_radius"] * math.cos(tsa_point[1] / self.pref_pack["tsa_resolution"] * 2 * math.pi) + origami_size[X] / 2.0,
-                                self.pref_pack["tsa_radius"] * math.sin(tsa_point[1] / self.pref_pack["tsa_resolution"] * 2 * math.pi) + origami_size[Y] / 2.0
-                            ]
-                        else:
-                            tp.point = self.units[tsa_point[1]].getCenter()
-                        tp.point_type = tsa_point[0]
-                        tp.id = tsa_point[1]
-                        tp.dir = tsa_point[2]
+#                 pointer = 0
 
-                        new_string.append(tp)
-                    self.string_total_information.append(new_string)
+#                 while pointer < len(methods):
+#                     p = multiprocessing.Process(target=workerMultisim, args=(
+#                             mlist, methodToTotalInformation(methods[pointer], mcts.P_points, mcts.O_points), pointer,
+#                             self.pref_pack, max_edge, input_units, max_size, total_bias
+#                         )
+#                     )
+#                     p_list.append(p)
+#                     pointer += 1
                 
-                if a_number < 4: # 非法
-                    all_batch_string_total_information.append(None)
-                    a_number_list.append(a_number)
-                    print("Batch: " + str(j) + ", Value: Error A number, A number: " + str(a_number))
-                elif not mcts.valid:
-                    all_batch_string_total_information.append(None)
-                    a_number_list.append(a_number)
-                    print("Batch: " + str(j) + ", Value: Error Border, A number: " + str(a_number))
-                else:
-                    all_batch_string_total_information.append(self.string_total_information)
-                    a_number_list.append(a_number)
-                    valid_number += 1
+#                 process_id = 0
 
-            if valid_number >= 1: 
-                print("There are " + str(valid_number) + " valid cases, using multi-process technology")
-                initial_fitness_list = []
-                for j in range(len(methods)):
-                    initial_fitness_list.append(0.0)
+#                 total_process_number = 4
 
-                mlist = multiprocessing.Manager().list(initial_fitness_list)
+#                 current_process_number = 0
 
-                p_list = []
+#                 while process_id < len(methods):
+#                     while current_process_number < total_process_number:
+#                         p_list[process_id].start()
+#                         current_process_number += 1
+#                         process_id += 1
+#                         if current_process_number == total_process_number or process_id == len(methods):
+#                             break
 
-                pointer = 0
+#                     while current_process_number > 0:
+#                         p_list[process_id - current_process_number].join()
+#                         current_process_number -= 1
 
-                while pointer < len(methods):
-                    if a_number_list[pointer] >= 4:
-                        p = multiprocessing.Process(target=workerMultisim, args=(
-                                mlist, all_batch_string_total_information[pointer], pointer, a_number_list[pointer],
-                                self.pref_pack, max_edge, input_units, max_size, total_bias
-                            )
-                        )
+#                 reward_list = list(mlist)
 
-                        p_list.append(p)
+#             elif valid_number == 1:
+#                 print("Only 1 valid case, using 1 process")
+#                 reward_list = [0.0]
 
-                    pointer += 1
+#                 ori_sim = OrigamiSimulator(use_gui=False)
+
+#                 ori_sim.string_total_information = methodToTotalInformation(methods[0], mcts.P_points, mcts.O_points)
+#                 ori_sim.pref_pack = self.pref_pack
+
+#                 ori_sim.startOnlyTSA(input_units, max_size, total_bias, max_edge)
+#                 ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
+#                 ori_sim.initializeRunning()
                 
-                process_id = 0
+#                 while 1:
+#                     ori_sim.step()
+#                     if ori_sim.folding_angle_reach_pi[0] or (ori_sim.dead_count >= 500 and not ori_sim.can_rotate) or (ori_sim.dead_count >= 200 and ori_sim.can_rotate):
+#                         break
+                    
+#                 if not ori_sim.can_rotate:
+#                     print("Epoch: " + str(i) + ", Batch: " + str(0) + ", Value: Error Actuation")
+#                     reward_list[0] = 0.0
+#                 else:
+#                     folding_percent = ori_sim.recorded_folding_percent[-1]
+#                     folding_speed = (ori_sim.recorded_folding_percent[-1] - ori_sim.recorded_folding_percent[0]) / (ori_sim.recorded_t[-1] - ori_sim.recorded_t[0])
 
-                total_process_number = len(p_list)
+#                     value = folding_speed * folding_percent
+#                     print("Epoch: " + str(i) + ", Batch: " + str(j) + ", Value: " + str(value))
+                    
+#                     reward_list[0] = value
 
-                current_process_number = 0
+#             mcts.tell(reward_list)
 
-                while process_id < total_process_number:
-                    while current_process_number < total_process_number:
-                        p_list[process_id].start()
-                        current_process_number += 1
-                        process_id += 1
-                        if process_id == total_process_number:
-                            break
+#             maximum_reward = max(reward_list)
+#             maximum_reward_index = reward_list.index(maximum_reward)
+#             scores.append(maximum_reward)
 
-                    while current_process_number > 0:
-                        p_list[process_id - current_process_number].join()
-                        current_process_number -= 1
+#             print("Epoch: " + str(i) + ", Max Value: " + str(maximum_reward) + ", Total batch size: " + str(len(reward_list)))
 
-                reward_list = list(mlist)
+#             best_method = methods[maximum_reward_index]
+#             total_string = deepcopy(best_method)
+#             total_string["score"] = maximum_reward
 
-            elif valid_number == 1:
-                print("Only 1 valid case, using 1 process")
-                reward_list = [0.0 for j in range(len(methods))]
-                for j in range(len(methods)):
-                    if a_number_list[j] >= 4: # ok to simulate
-                        ori_sim = OrigamiSimulator(use_gui=False)
-
-                        ori_sim.string_total_information = all_batch_string_total_information[j]
-                        ori_sim.pref_pack = self.pref_pack
-
-                        ori_sim.startOnlyTSA(input_units, max_size, total_bias, max_edge)
-                        ori_sim.enable_tsa_rotate = ori_sim.rotation_step
-                        ori_sim.initializeRunning()
-                        
-                        while ori_sim.dead_count < 500:
-                            ori_sim.step()
-                            if ori_sim.folding_angle_reach_pi[0] or math.isnan(ori_sim.total_energy[0]):
-                                break
-                            
-                        if not ori_sim.can_rotate:
-                            print("Epoch: " + str(i) + ", Batch: " + str(j) + ", Value: Error Actuation, A number: " + str(a_number_list[j]))
-                            reward_list[j] = 0.0
-                        else:
-                            if math.isnan(ori_sim.total_energy[0]):
-                                ori_sim.total_energy[0] = 0.0
-                                value = 0.0
-                            else:
-                                energy_list = ori_sim.recorded_energy
-                                avg_energy = sum(energy_list) / len(energy_list)
-                                bonus = ori_sim.total_energy[0] / avg_energy - 2.0
- 
-                                value = ori_sim.total_energy[0] / ori_sim.total_energy_maximum
-                                if value > 0.5:
-                                    value += 4. / (1. + bonus ** 2)
-                            print("Epoch: " + str(i) + ", Batch: " + str(j) + ", Value: " + str(value) + ", A number: " + str(a_number_list[j]))
-                            
-                            reward_list[j] = value
-
-            else:
-                print("No valid case, using 1 process")
-                reward_list = [0.0 for j in range(len(methods))]
-
-            maximum_reward = max(reward_list)
-            maximum_reward_index = reward_list.index(maximum_reward)
-            scores.append(maximum_reward)
-
-            print("Epoch: " + str(i) + ", Max Value: " + str(maximum_reward) + ", Total batch size: " + str(len(reward_list))) # + ", A number list: " + str(a_number_list
-
-            mcts.tell(reward_list)
-
-            best_method = methods[maximum_reward_index]
-            total_string = {
-                "type": [],
-                "id": [],
-                "reverse": [],
-                "score": maximum_reward
-            }
-            for string in best_method:
-                string_point_type = []
-                string_id = []
-                string_reverse = []
-                for tsa_point in string:
-                    string_point_type.append(tsa_point[0])
-                    string_id.append(int(tsa_point[1]))
-                    string_reverse.append(int(tsa_point[2]))
-                total_string["type"].append(string_point_type)
-                total_string["id"].append(string_id)
-                total_string["reverse"].append(string_reverse)
+#             try:
+#                 with open(os.path.join(self.file_path, "result_epoch_" + str(i) + "_score_" + str(round(maximum_reward, 2))) + ".json", 'w', encoding="utf-8") as f:
+#                     json.dump(total_string, f, indent=4)
+#             except:
+#                 pass
             
-            try:
-                with open(os.path.join(self.file_path, "result_epoch_" + str(i) + "_score_" + str(round(maximum_reward, 2))) + ".json", 'w', encoding="utf-8") as f:
-                    json.dump(total_string, f, indent=4)
-            except:
-                pass
-            
-            score_list = {
-                "score": scores
-            }
+#             score_list = {
+#                 "score": scores
+#             }
 
-            try:
-                with open(os.path.join(self.file_path, "score.json"), 'w', encoding="utf-8") as f:
-                    json.dump(score_list, f, indent=4)
-            except:
-                pass
+#             try:
+#                 with open(os.path.join(self.file_path, "score.json"), 'w', encoding="utf-8") as f:
+#                     json.dump(score_list, f, indent=4)
+#             except:
+#                 pass
         
-        self._emit.emit(1.0)
-        print("END TRAINING!")
+#         self._emit.emit(1.0)
+#         print("END TRAINING!")
 
 class ThreadingMethodSearchingThread(QThread):
     _emit = pyqtSignal(float)
@@ -4247,24 +4577,41 @@ class ThreadingMethodSearchingThread(QThread):
         self._emit.emit(0.0)
         ori_sim = self.ori_simulator
         
-        while ori_sim.dead_count < 500:
+        step = 1
+        while 1:
             ori_sim.step()
-            if ori_sim.folding_angle_reach_pi[0] or math.isnan(ori_sim.total_energy[0]) or (ori_sim.current_t > 4.0 and not ori_sim.can_rotate) or (ori_sim.current_t > 20.0 and ori_sim.can_rotate):
-                break
-            self._emit.emit(ori_sim.total_energy[0] / ori_sim.total_energy_maximum)
+                    
+            if ori_sim.folding_angle_reach_pi[0] or (ori_sim.dead_count >= 100 and not ori_sim.can_rotate) or (ori_sim.dead_count >= 40 and ori_sim.can_rotate):
+                if ori_sim.sim_mode == ori_sim.TSA_SIM and ori_sim.can_rotate:
+                    if ori_sim.recorded_folding_percent[-1] > FOLDING_MAXIMUM:
+                        break
+                    else:
+                        if ori_sim.recorded_folding_percent[-1] < np.mean(np.array(ori_sim.recorded_folding_percent[-51: -1])):
+                            break
+                else:
+                    break
+            step += 1
+            self._emit.emit(ori_sim.folding_percent)
 
         all_dis = {
-            "tsa_turning_angle": [],
-            "dead_count": [],
-            "energy": []
+            "control_string_decrease": [],
+            "string_decrease_each": [],
+            "max_force": [],
+            "folding_percent": [],
+            "max_folding_percent": [],
+            "min_folding_percent": [],
+            "time": []
         }
 
-        all_dis["dead_count"] = ori_sim.recorded_dead_count
-        all_dis["tsa_turning_angle"] = ori_sim.recorded_turning_angle
-        all_dis["energy"] = ori_sim.recorded_energy
+        all_dis["control_string_decrease"] = ori_sim.recorded_string_decrease_length_control
+        all_dis["string_decrease_each"] = ori_sim.recorded_string_decrease_length
+        all_dis["folding_percent"] = ori_sim.recorded_folding_percent
+        all_dis["max_folding_percent"] = ori_sim.recorded_maximum_folding_percent
+        all_dis["min_folding_percent"] = ori_sim.recorded_minimum_folding_percent
+        all_dis["max_force"] = ori_sim.recorded_max_force
+        all_dis["time"] = ori_sim.recorded_t
 
         with open(self.file_path, 'w', encoding="utf-8") as f:
             json.dump(all_dis, f, indent=4)
 
         self._emit.emit(1.0)
-

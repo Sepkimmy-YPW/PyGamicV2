@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2023-2024 Spring\11-1 SGLAB\pygamic\gui\pref_window.ui'
+# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2024 Summer\pygamic-release\pygamic\gui\pref_window.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.4
 #
@@ -205,7 +205,7 @@ class Ui_Settings(object):
         self.checkBox_disable_pillars.setObjectName("checkBox_disable_pillars")
         self.setting_box_layers.addItem(self.regular_setting, "")
         self.view_setting = QtWidgets.QWidget()
-        self.view_setting.setGeometry(QtCore.QRect(0, 0, 100, 30))
+        self.view_setting.setGeometry(QtCore.QRect(0, 0, 621, 293))
         self.view_setting.setObjectName("view_setting")
         self.label_cursor_mode = QtWidgets.QLabel(self.view_setting)
         self.label_cursor_mode.setGeometry(QtCore.QRect(10, 10, 161, 21))
@@ -255,9 +255,15 @@ class Ui_Settings(object):
         self.radioButton_dark_theme.setAutoRepeat(False)
         self.radioButton_dark_theme.setAutoExclusive(True)
         self.radioButton_dark_theme.setObjectName("radioButton_dark_theme")
+        self.radioButton_fast_simulation_mode = QtWidgets.QRadioButton(self.view_setting)
+        self.radioButton_fast_simulation_mode.setGeometry(QtCore.QRect(10, 210, 181, 21))
+        self.radioButton_fast_simulation_mode.setChecked(False)
+        self.radioButton_fast_simulation_mode.setAutoRepeat(False)
+        self.radioButton_fast_simulation_mode.setAutoExclusive(True)
+        self.radioButton_fast_simulation_mode.setObjectName("radioButton_fast_simulation_mode")
         self.setting_box_layers.addItem(self.view_setting, "")
         self.cdf_setting = QtWidgets.QWidget()
-        self.cdf_setting.setGeometry(QtCore.QRect(0, 0, 100, 30))
+        self.cdf_setting.setGeometry(QtCore.QRect(0, 0, 621, 293))
         self.cdf_setting.setObjectName("cdf_setting")
         self.label_cursor_mode_2 = QtWidgets.QLabel(self.cdf_setting)
         self.label_cursor_mode_2.setGeometry(QtCore.QRect(10, 10, 151, 21))
@@ -456,7 +462,7 @@ class Ui_Settings(object):
         self.doubleSpinBox_state2_dir.setObjectName("doubleSpinBox_state2_dir")
         self.setting_box_layers.addItem(self.cdf_setting, "")
         self.page = QtWidgets.QWidget()
-        self.page.setGeometry(QtCore.QRect(0, 0, 100, 30))
+        self.page.setGeometry(QtCore.QRect(0, 0, 621, 293))
         self.page.setObjectName("page")
         self.label_cursor_mode_12 = QtWidgets.QLabel(self.page)
         self.label_cursor_mode_12.setGeometry(QtCore.QRect(10, 10, 151, 21))
@@ -497,7 +503,7 @@ class Ui_Settings(object):
         self.radioButton_nodiff.setText(_translate("Settings", "No diff."))
         self.radioButton_valleysmall.setText(_translate("Settings", "Valley small"))
         self.radioButton_mountainsmall.setText(_translate("Settings", "Mountain small"))
-        self.checkBox_stl_asymmetry.setText(_translate("Settings", "Stl Asymmetry Enable"))
+        self.checkBox_stl_asymmetry.setText(_translate("Settings", "Stl border bias enable"))
         self.label_printer_accuracy_4.setText(_translate("Settings", "Layers of shell and crease:"))
         self.label_printer_accuracy_5.setText(_translate("Settings", "TSA Board Radius(mm):"))
         self.label_printer_accuracy_6.setText(_translate("Settings", "TSA Board Resolution:"))
@@ -518,6 +524,7 @@ class Ui_Settings(object):
         self.radioButton_real_axis.setText(_translate("Settings", "Real Axis"))
         self.radioButton_light_theme.setText(_translate("Settings", "Light(White)"))
         self.radioButton_dark_theme.setText(_translate("Settings", "Dark(Black)"))
+        self.radioButton_fast_simulation_mode.setText(_translate("Settings", "Fast Simulation Mode"))
         self.setting_box_layers.setItemText(self.setting_box_layers.indexOf(self.view_setting), _translate("Settings", "View Setting"))
         self.label_cursor_mode_2.setText(_translate("Settings", "Unit Length(mm) from:"))
         self.label_cursor_mode_3.setText(_translate("Settings", "to"))

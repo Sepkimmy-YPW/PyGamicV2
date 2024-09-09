@@ -1,7 +1,3 @@
-import math
-import numpy as np
-import json
-
 from PyQt5.QtWidgets import QDialog
 
 from gui.Ui_stl_dialog import Ui_Dialog

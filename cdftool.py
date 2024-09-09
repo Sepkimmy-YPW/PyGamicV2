@@ -6,11 +6,7 @@ from matplotlib.widgets import Slider
 import time
 from cmaes import CMA, CMAwM
 import json
-
-X = 0
-Y = 1
-START = 0
-END = 1
+from utils import VALLEY, MOUNTAIN, BORDER, X, Y, START, END
 
 plt.rcParams['font.sans-serif'] = 'Times new roman'
 
@@ -311,7 +307,7 @@ class CurveFittingHelper:
         # target_direction1 = 0.0
         point1 = [1., 0.]
         point2 = [math.cos(origin_angle_exo_state1), math.sin(origin_angle_exo_state1)]
-        error = 0. #(math.sqrt((point1[X] - point2[X]) ** 2 + (point1[Y] - point2[Y]) ** 2)) / 2. #0-1
+        error = (math.sqrt((point1[X] - point2[X]) ** 2 + (point1[Y] - point2[Y]) ** 2)) / 2. #0-1
         bigger_than_zero = 1 if origin_exo_state1[X] > 0 else 0 #0/1
         y_distance = math.sqrt(origin_exo_state1[Y] ** 2) # small is better
 
@@ -1139,7 +1135,7 @@ class MCTS:
         self.VISITED = 1
         self.FIXED = 2
 
-        self.total_string_number = 2 * self.tsa_number + self.string_root_number
+        self.total_string_number = 2
 
         self.values = [[[] for j in range(self.total_string_number)] for i in range(len(self.units))]  # XI + SQRT(2LNn/NI)
         self.n = [0 for j in range(self.total_string_number)]
@@ -1761,6 +1757,458 @@ class MCTS:
 
         for i in range(len(self.values)):
             print(self.values[i])
+
+class Agent:
+    def __init__(self, P_number, O_number, P_points, O_points, creases, status_list) -> None:
+        self.P_number = P_number
+        self.O_number = O_number
+        self.P_points = P_points
+        self.O_points = O_points
+        self.status_list = status_list
+        # Initial choose
+        self.N_P = 0
+        self.dict_P = [{
+            "value": 0.0,
+            "n": 0,
+            "ucb": 0.0,
+        } for _ in range(P_number)]
+
+        # Process choose
+        self.N_table = [0 for _ in range(P_number + O_number)] 
+        self.table = [
+            [] for _ in range(P_number + O_number)
+        ]
+
+        # Build the table
+        for i in range(P_number + O_number):
+            for taking_action in range(P_number + O_number):
+                if i < P_number:
+                    if taking_action >= P_number:
+                        P_choice = self.P_points[i]
+                        O_choice = self.O_points[taking_action - P_number]
+                        intersection_ids = self.calculateIntersectionWithCreases(P_choice, O_choice, creases)
+                        if len(intersection_ids) > 0:
+                            intersection_crease_type = [0, 0, 0]
+                            for id in intersection_ids:
+                                intersection_crease_type[creases[id].getType()] += 1
+                            # check valid
+                            valid = 0
+                            if intersection_crease_type[BORDER] > 0 and intersection_crease_type[MOUNTAIN] == 0 and intersection_crease_type[VALLEY] == 0:
+                                valid = 1
+                                dir = 0
+                            elif intersection_crease_type[BORDER] == 0 and intersection_crease_type[MOUNTAIN] > 0 and intersection_crease_type[VALLEY] == 0:
+                                valid = 1
+                                dir = -1
+                            elif intersection_crease_type[BORDER] == 0 and intersection_crease_type[MOUNTAIN] == 0 and intersection_crease_type[VALLEY] > 0:
+                                valid = 1
+                                dir = 1
+                            if valid != 0:
+                                self.table[i].append({
+                                    "action": taking_action,
+                                    "side": dir,
+                                    "value": 0.0,
+                                    "n": 0,
+                                    "ucb": 0.0,
+                                    "done": 0 if status_list[taking_action] != -1 else 1
+                                })
+                else:
+                    if taking_action < P_number:
+                        P_choice = self.P_points[taking_action]
+                        O_choice = self.O_points[i - P_number]
+                        intersection_ids = self.calculateIntersectionWithCreases(P_choice, O_choice, creases)
+                        if len(intersection_ids) > 0:
+                            intersection_crease_type = [0, 0, 0]
+                            for id in intersection_ids:
+                                intersection_crease_type[creases[id].getType()] += 1
+                            # check valid
+                            valid = 0
+                            if intersection_crease_type[BORDER] > 0 and intersection_crease_type[MOUNTAIN] == 0 and intersection_crease_type[VALLEY] == 0:
+                                valid = 1
+                                dir = 0
+                            elif intersection_crease_type[BORDER] == 0 and intersection_crease_type[MOUNTAIN] > 0 and intersection_crease_type[VALLEY] == 0:
+                                valid = 1
+                                dir = -1
+                            elif intersection_crease_type[BORDER] == 0 and intersection_crease_type[MOUNTAIN] == 0 and intersection_crease_type[VALLEY] > 0:
+                                valid = 1
+                                dir = 1
+                            if valid != 0:
+                                self.table[i].append({
+                                    "action": taking_action,
+                                    "side": dir,
+                                    "value": 0.0,
+                                    "n": 0,
+                                    "ucb": 0.0,
+                                    "done": 1
+                                })
+                    else:
+                        if taking_action != i:
+                            O_choice_target = self.O_points[taking_action - P_number]
+                            O_choice = self.O_points[i - P_number]
+                            intersection_ids = self.calculateIntersectionWithCreases(O_choice_target, O_choice, creases)
+                            if len(intersection_ids) > 0:
+                                intersection_crease_type = [0, 0, 0]
+                                for id in intersection_ids:
+                                    intersection_crease_type[creases[id].getType()] += 1
+                                # check valid
+                                valid = 0
+                                if intersection_crease_type[BORDER] > 0 and intersection_crease_type[MOUNTAIN] == 0 and intersection_crease_type[VALLEY] == 0:
+                                    valid = 1
+                                    dir = 0
+                                elif intersection_crease_type[BORDER] == 0 and intersection_crease_type[MOUNTAIN] > 0 and intersection_crease_type[VALLEY] == 0:
+                                    valid = 1
+                                    dir = -1
+                                elif intersection_crease_type[BORDER] == 0 and intersection_crease_type[MOUNTAIN] == 0 and intersection_crease_type[VALLEY] > 0:
+                                    valid = 1
+                                    dir = 1
+                                if valid != 0:
+                                    self.table[i].append({
+                                        "action": taking_action,
+                                        "side": dir,
+                                        "value": 0.0,
+                                        "n": 0,
+                                        "ucb": 0.0,
+                                        "done": 0 if status_list[taking_action] != -1 else 1
+                                    })
+                        elif taking_action == i:
+                            self.table[i].append({
+                                "action": taking_action,
+                                "side": 0,
+                                "value": 0.0,
+                                "n": 0,
+                                "ucb": 0.0,
+                                "done": 1
+                            })
+        
+    def calculateIntersectionWithCreases(self, P_choice, O_choice, creases):
+        ids = []
+        for i in range(len(creases)):
+            crease_start_point = creases[i][START]
+            crease_end_point = creases[i][END]
+            vec1_2D = np.array([crease_end_point[X] - crease_start_point[X], crease_end_point[Y] - crease_start_point[Y]])
+            vec1_relevant1_2D = np.array([P_choice[X] - crease_start_point[X], P_choice[Y] - crease_start_point[Y]])
+            vec1_relevant2_2D = np.array([O_choice[X] - crease_start_point[X], O_choice[Y] - crease_start_point[Y]])
+            result1 = np.cross(vec1_2D, vec1_relevant1_2D).item() * np.cross(vec1_2D, vec1_relevant2_2D).item()
+            vec2_2D = np.array([O_choice[X] - P_choice[X], O_choice[Y] - P_choice[Y]])
+            vec2_relevant1_2D = np.array([crease_start_point[X] - P_choice[X], crease_start_point[Y] - P_choice[Y]])
+            vec2_relevant2_2D = np.array([crease_end_point[X] - P_choice[X], crease_end_point[Y] - P_choice[Y]])
+            result2 = np.cross(vec2_2D, vec2_relevant1_2D).item() * np.cross(vec2_2D, vec2_relevant2_2D).item()
+            if result1 < 0.0 and result2 < 0.0:
+                ids.append(i)
+        return ids
+    
+    def calculateUCB(self, epsilon, ucb_bonus):
+        for i in range(self.P_number):
+            self.dict_P[i]["ucb"] = self.dict_P[i]["value"] + ucb_bonus * epsilon * math.sqrt(2 * math.log(self.N_P + 1) / (self.dict_P[i]["n"] + 1))
+        for i in range(self.P_number + self.O_number):
+            for j in range(len(self.table[i])):
+                self.table[i][j]["ucb"] = self.table[i][j]["value"] + ucb_bonus * epsilon * math.sqrt(2 * math.log(self.N_table[i] + 1) / (self.table[i][j]["n"] + 1))
+
+    def sampleP(self):
+        for i in range(self.P_number):
+            if len(self.table[i]) > 0:
+                max_list = [i]
+                max_ucb = self.dict_P[i]["ucb"]
+                break
+        for j in range(i + 1, self.P_number):
+            if len(self.table[j]) > 0:
+                if self.dict_P[j]["ucb"] > max_ucb:
+                    max_list = [j]
+                    max_ucb = self.dict_P[j]["ucb"]
+                elif self.dict_P[j]["ucb"] == max_ucb:
+                    max_list.append(j)
+        try:
+            P_id = np.random.choice(max_list, 1).item()
+            return P_id, 0, len(max_list)
+        except:
+            return -1, 0, 1
+    
+    def getAction(self, state, side=0, valid_pass=1):
+        if side == 0:
+            if valid_pass:
+                # trajectory is already valid, get general actions!
+                max_list = [0]
+                max_ucb = self.table[state][0]["ucb"]
+                for i in range(1, len(self.table[state])):
+                    if self.table[state][i]["ucb"] > max_ucb:
+                        max_list = [i]
+                        max_ucb = self.table[state][i]["ucb"]
+                    elif self.table[state][i]["ucb"] == max_ucb:
+                        max_list.append(i)
+                action_index = np.random.choice(max_list, 1).item()
+            else:
+                # trajectory has not passed a valid/mountain crease, try to find action that satisfies side != 0
+                for i in range(len(self.table[state])):
+                    if self.table[state][i]["side"] != 0:
+                        max_list = [i]
+                        max_ucb = self.table[state][i]["ucb"]
+                        break
+                for j in range(i + 1, len(self.table[state])):
+                    if self.table[state][j]["side"] != 0:
+                        if self.table[state][j]["ucb"] > max_ucb:
+                            max_list = [j]
+                            max_ucb = self.table[state][j]["ucb"]
+                        elif self.table[state][j]["ucb"] == max_ucb:
+                            max_list.append(j)
+                try:
+                    action_index = np.random.choice(max_list, 1).item()
+                except:
+                    # trial failed, back to find general actions.
+                    max_list = [0]
+                    max_ucb = self.table[state][0]["ucb"]
+                    for i in range(1, len(self.table[state])):
+                        if self.table[state][i]["ucb"] > max_ucb:
+                            max_list = [i]
+                            max_ucb = self.table[state][i]["ucb"]
+                        elif self.table[state][i]["ucb"] == max_ucb:
+                            max_list.append(i)
+                    action_index = np.random.choice(max_list, 1).item()
+            return self.table[state][action_index]["action"], self.table[state][action_index]["side"], self.table[state][action_index]["done"], len(max_list)
+        else:
+            for i in range(len(self.table[state])):
+                if self.table[state][i]["side"] == -side or self.table[state][i]["side"] == 0:
+                    max_list = [i]
+                    max_ucb = self.table[state][i]["ucb"]
+                    break
+            for j in range(i + 1, len(self.table[state])):
+                if self.table[state][j]["side"] == -side or self.table[state][j]["side"] == 0:
+                    if self.table[state][j]["ucb"] > max_ucb:
+                        max_list = [j]
+                        max_ucb = self.table[state][j]["ucb"]
+                    elif self.table[state][j]["ucb"] == max_ucb:
+                        max_list.append(j)
+            action_index = np.random.choice(max_list, 1).item()
+            return self.table[state][action_index]["action"], self.table[state][action_index]["side"], self.table[state][action_index]["done"], len(max_list)
+
+    def getRandomAction(self, state, side=0, valid_pass=1):
+        if side == 0:
+            if valid_pass:
+                action_index = np.random.choice(len(self.table[state]), 1).item()
+            else:
+                candidate = []
+                for i in range(len(self.table[state])):
+                    if self.table[state][i]["side"] != 0:
+                        candidate.append(i)
+                try:
+                    action_index = np.random.choice(candidate, 1).item()
+                except:
+                    action_index = np.random.choice(len(self.table[state]), 1).item()
+            return self.table[state][action_index]["action"], self.table[state][action_index]["side"], self.table[state][action_index]["done"]
+        else:
+            candidate = []
+            for i in range(len(self.table[state])):
+                if self.table[state][i]["side"] == -side or self.table[state][i]["side"] == 0:
+                    candidate.append(i)
+            action_index = np.random.choice(candidate, 1).item()
+            return self.table[state][action_index]["action"], self.table[state][action_index]["side"], self.table[state][action_index]["done"]
+    
+    def generateStatusList(self, trajectory):
+        status_list = deepcopy(self.status_list)
+        for i in range(len(trajectory) - 1):
+            status_list[trajectory[i][0]] += 1
+        if trajectory[-1][0] >= self.P_number:
+            status_list[trajectory[-1][0]] = -1 # fixed
+        return status_list
+
+    def packTrajectory(self, trajectory):
+        dict = {
+            "type": [],
+            "id": [],
+            "reverse": []
+        }
+        for i in range(len(trajectory)):
+            if trajectory[i][0] < self.P_number:
+                dict["type"].append("A")
+                dict["id"].append(trajectory[i][0])
+            else:
+                dict["type"].append("B")
+                dict["id"].append(trajectory[i][0] - self.P_number)
+        exist_non_zero_side = 0
+        for i in range(len(trajectory)):
+            if trajectory[i][1] != 0:
+                exist_non_zero_side = trajectory[i][1]
+                break
+        if exist_non_zero_side:
+            for j in range(len(trajectory)):
+                if (j - i) % 2 == 0:
+                    dict["reverse"].append(trajectory[i][1])
+                else:
+                    dict["reverse"].append(-trajectory[i][1])
+            dict["reverse"][0] = dict["reverse"][1]
+        else:
+            for j in range(len(trajectory)):
+                if j % 2 == 0:
+                    dict["reverse"].append(-1)
+                else:
+                    dict["reverse"].append(1)
+            dict["reverse"][0] = 1
+        return dict
+        
+    def ask(self, batch_size, epsilon, ucb_bonus):
+        total_trajectory = []
+        self.calculateUCB(epsilon, ucb_bonus)
+        valid_pass = 0
+        id, side, confirm = self.sampleP()
+        if side != 0:
+            valid_pass = 1
+        total_trajectory.append((id, side))
+        done = 0
+        while confirm == 1: # Not stop!
+            new_id, side, done, confirm = self.getAction(total_trajectory[-1][0], side, valid_pass)
+            if side != 0:
+                valid_pass = 1
+            if new_id != total_trajectory[-1][0]:
+                total_trajectory.append((new_id, side))
+            if done:
+                break
+        basic_trajectory = deepcopy(total_trajectory)
+        if done:
+            return basic_trajectory, self.packTrajectory(basic_trajectory), [deepcopy(basic_trajectory)], [self.packTrajectory(basic_trajectory)], [self.generateStatusList(basic_trajectory)], 1
+        # Generate a batch of method
+        if not done:
+            generate_trajectory = [deepcopy(total_trajectory) for _ in range(batch_size)]
+            for i in range(batch_size):
+                batch_valid_pass = valid_pass
+                batch_done = 0
+                while not batch_done:
+                    new_id, side, batch_done = self.getRandomAction(generate_trajectory[i][-1][0], side, batch_valid_pass)
+                    if side != 0:
+                        batch_valid_pass = 1
+                    if new_id != generate_trajectory[i][-1][0]:
+                        generate_trajectory[i].append((new_id, side))
+        batch_status_list = [self.generateStatusList(generate_trajectory[i]) for i in range(batch_size)]
+        batch_packed_trajectory = [self.packTrajectory(generate_trajectory[i]) for i in range(batch_size)]
+        return basic_trajectory, self.packTrajectory(basic_trajectory), generate_trajectory, batch_packed_trajectory, batch_status_list, 0
+
+    def tell(self, reward_list, id_list):
+        total_score = sum(reward_list)
+        n = len(reward_list)
+        for i in range(len(id_list)):
+            if i == 0:
+                # Update P_dict
+                target = self.dict_P[id_list[i][0]]
+                target["value"] = (target["value"] * target["n"] + total_score) / (n + target["n"])
+                target["n"] += n
+                self.N_P += n
+            else:
+                # Update table
+                target_state = self.table[id_list[i - 1][0]]
+                for j in range(len(target_state)):
+                    if target_state[j]["action"] == id_list[i][0]:
+                        break
+                target = target_state[j]
+                target["value"] = (target["value"] * target["n"] + total_score) / (n + target["n"])
+                target["n"] += n
+                self.N_table[id_list[i - 1][0]] += n
+            
+class MCTS_Simplified:
+    def __init__(self, units, creases, kps, panel_size, panel_resolution, origami_size, string_number, generation) -> None:
+        self.units = units
+        self.creases = creases
+        self.kps = kps
+
+        self.string_number = string_number
+
+        self.origami_size = origami_size
+
+        self.generation = generation
+
+        self.panel_size = panel_size
+
+        self.panel_resolution = panel_resolution # |P|
+        self.unit_number = len(units) # |O|
+
+        self.total_state_number = self.panel_resolution + self.unit_number # |P| + |O|
+
+        self.P_points = [
+            panel_size * np.array([
+                math.cos(2. * math.pi * i / self.panel_resolution), 
+                math.sin(2. * math.pi * i / self.panel_resolution)
+            ]) + np.array(origami_size) / 2.0 for i in range(self.panel_resolution)
+        ]
+        self.O_points = [
+            np.array(units[i].getCenter()) for i in range(self.unit_number)
+        ]
+
+        #Point state
+        self.NO_VISITED = 0 
+        self.FIXED = -1
+
+        self.first_constraint_information = Agent(self.panel_resolution, self.unit_number, self.P_points, self.O_points, creases, [self.NO_VISITED for i in range(self.panel_resolution + self.unit_number)])
+        self.other_constraint_information = []
+
+        self.update_list = []
+
+        self.ucb_bonus = 12.
+    
+    def epsilon_policy(self, step):
+        if step < 4. * self.generation / 5:
+            return 1.
+        else:
+            return 1. - (step - 4. * self.generation / 5) * 5 / self.generation
+        
+    def ask(self, batch_size, step):
+        epsilon = self.epsilon_policy(step)
+        total_method = []
+        initial_method = []
+        
+        first_basic_trajectory, first_basic_packed_trajectory, first_generate_trajectory, first_packed_trajectory, first_status_lists, first_finish = self.first_constraint_information.ask(batch_size, epsilon, self.ucb_bonus)
+        self.update_list.append(first_basic_trajectory)
+
+        previous_trajectory = [[] for _ in range(len(first_generate_trajectory))]
+        for i in range(len(first_generate_trajectory)):
+            previous_trajectory[i].append(first_generate_trajectory[i])
+
+            exist_information = False
+            for j in range(len(self.other_constraint_information)):
+                agent = self.other_constraint_information[j]
+                if agent["previous_trajectory"] == previous_trajectory[i]:
+                    exist_information = True
+                    break
+            
+            if exist_information:
+                second_basic_trajectory, second_basic_packed_trajectory, second_generate_trajectory, second_packed_trajectory, second_status_list, second_finish = self.other_constraint_information[j]["agent"].ask(batch_size, epsilon, self.ucb_bonus)
+                self.update_list.append((j, second_basic_trajectory))
+            else:
+                self.other_constraint_information.append({
+                    "previous_trajectory": previous_trajectory[i],
+                    "agent": Agent(self.panel_resolution, self.unit_number, self.P_points, self.O_points, self.creases, first_status_lists[i])
+                })
+                second_basic_trajectory, second_basic_packed_trajectory, second_generate_trajectory, second_packed_trajectory, second_status_list, second_finish = self.other_constraint_information[-1]["agent"].ask(batch_size, epsilon, self.ucb_bonus)
+                self.update_list.append((len(self.other_constraint_information) - 1, second_basic_trajectory))
+            
+            for j in range(len(second_generate_trajectory)):
+                total_method.append({
+                    "type": [
+                        first_packed_trajectory[i]["type"], second_packed_trajectory[j]["type"]
+                    ],
+                    "id": [
+                        first_packed_trajectory[i]["id"], second_packed_trajectory[j]["id"]
+                    ],
+                    "reverse": [
+                        first_packed_trajectory[i]["reverse"], second_packed_trajectory[j]["reverse"]
+                    ]
+                })
+            initial_method.append({
+                "type": [
+                    first_basic_packed_trajectory["type"], second_basic_packed_trajectory["type"]
+                ],
+                "id": [
+                    first_basic_packed_trajectory["id"], second_basic_packed_trajectory["id"]
+                ],
+                "reverse": [
+                    first_basic_packed_trajectory["reverse"], second_basic_packed_trajectory["reverse"]
+                ]
+            })
+        return total_method, initial_method
+    
+    def tell(self, reward_list):
+        for i in range(len(self.update_list)):
+            if i == 0:
+                # first agent
+                self.first_constraint_information.tell(reward_list, self.update_list[i])
+            else:
+                self.other_constraint_information[self.update_list[i][0]]["agent"].tell(reward_list, self.update_list[i][1])
+        self.update_list.clear()
 
 if __name__ == "__main__":
     gm = GraphModel([1], None, None)

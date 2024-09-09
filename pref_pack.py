@@ -39,6 +39,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             "asym": False,
             "only_two_sides": False,
             "disable_pillars": False,
+            "fast_simulation_mode": False
         }
 
         self.limitation = {
@@ -155,6 +156,9 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.spinBox_tsa_resolution.setValue(self.pref_pack["tsa_resolution"])
         #10
         self.checkBox_debug_mode.setChecked(self.pref_pack["debug_mode"])
+        #11
+        self.radioButton_fast_simulation_mode.setChecked(self.pref_pack["fast_simulation_mode"])
+        
         #LIMITATION
         #1
         self.doubleSpinBox_unit_length_min.setValue(self.limitation["unit_length"][0])
@@ -281,6 +285,9 @@ class PreferencePackWindow(Ui_Settings, QDialog):
         self.pref_pack["tsa_resolution"] = self.spinBox_tsa_resolution.value()
         #10
         self.pref_pack["debug_mode"] = self.checkBox_debug_mode.isChecked()
+        #11
+        self.pref_pack["fast_simulation_mode"] = self.radioButton_fast_simulation_mode.isChecked()
+
         #LIMITATION
         #1
         self.limitation["unit_length"] = [
@@ -376,7 +383,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                     if head not in [
                         "print_accuracy", "split_distance", "output_bc", "board_bias", "asym", "only_two_sides", "disable_pillars", 
                         "connection_angle", "enable_db", "enable_db_bind", "additional_line_option", "stl_asymmetry", "thin_mode", "layer", "middle_bias", 
-                        "cursor_axis_mode", "line_weight", "show_keypoint", "theme", "tsa_radius", "tsa_resolution",
+                        "cursor_axis_mode", "line_weight", "show_keypoint", "theme", "tsa_radius", "tsa_resolution", "fast_simulation_mode", 
                         "unit_length", "miura_angle", "row_number", "generation", 
                         "batch_size", "process_number", "storage", "match_mode", "discrete_resolution",
                         "hypar_enable", "direction_enable", "debug_mode", "mcts_epoch", "exo_angle1", "exo_angle2", "exo_X", "exo_Y", "exo_theta"
@@ -391,7 +398,7 @@ class PreferencePackWindow(Ui_Settings, QDialog):
                         else:
                             raise TypeError
                     #2
-                    elif head in ["output_bc", "enable_db", "enable_db_bind", "stl_asymmetry", "thin_mode", "show_keypoint", "debug_mode", "asym", "only_two_sides", "disable_pillars"]:
+                    elif head in ["output_bc", "enable_db", "enable_db_bind", "stl_asymmetry", "thin_mode", "show_keypoint", "debug_mode", "asym", "only_two_sides", "disable_pillars", "fast_simulation_mode"]:
                         if content == "True":
                             self.pref_pack[head] = True
                             continue

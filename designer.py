@@ -64,10 +64,10 @@ class OrigamiDesigner:
             length, width = self.design_data[0].getOrigamiInfo()
             return length, width
         elif type(self.src) == DxfDirectGrabber:
-            max_y = max(self.src.kps[Y])
-            max_x = max(self.src.kps[X])
-            min_y = min(self.src.kps[Y])
-            min_x = min(self.src.kps[X])
+            max_y = max([self.src.kps[i][Y] for i in range(len(self.src.kps))])
+            max_x = max([self.src.kps[i][X] for i in range(len(self.src.kps))])
+            min_y = min([self.src.kps[i][Y] for i in range(len(self.src.kps))])
+            min_x = min([self.src.kps[i][X] for i in range(len(self.src.kps))])
             return max_x - min_x, max_y - min_y
 
     def getGeometryData(self):

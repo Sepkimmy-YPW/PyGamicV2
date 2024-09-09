@@ -393,7 +393,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>Stl Asymmetry Enable</string>
+      <string>Stl border bias enable</string>
      </property>
      <property name="checked">
       <bool>true</bool>
@@ -657,8 +657,8 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>100</width>
-      <height>30</height>
+      <width>621</width>
+      <height>293</height>
      </rect>
     </property>
     <attribute name="label">
@@ -847,14 +847,36 @@
       </property>
      </widget>
     </widget>
+    <widget class="QRadioButton" name="radioButton_fast_simulation_mode">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>210</y>
+       <width>181</width>
+       <height>21</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Fast Simulation Mode</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+     <property name="autoRepeat">
+      <bool>false</bool>
+     </property>
+     <property name="autoExclusive">
+      <bool>true</bool>
+     </property>
+    </widget>
    </widget>
    <widget class="QWidget" name="cdf_setting">
     <property name="geometry">
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>100</width>
-      <height>30</height>
+      <width>621</width>
+      <height>293</height>
      </rect>
     </property>
     <attribute name="label">
@@ -1563,8 +1585,8 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>100</width>
-      <height>30</height>
+      <width>621</width>
+      <height>293</height>
      </rect>
     </property>
     <attribute name="label">

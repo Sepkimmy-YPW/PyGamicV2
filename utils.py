@@ -11,6 +11,8 @@ UP = 1
 DOWN = 0
 MIDDLE = 2
 
+FOLDING_MAXIMUM = 0.95
+
 X = 0
 Y = 1
 Z = 2
@@ -56,6 +58,8 @@ class Vertex:
         return self.kp
 
 class Crease:
+    def __repr__(self):
+        return f"Start: {self.points[START]}, End: {self.points[END]}"
     def __init__(self, start, end, crease_type, show_color_flag=True, hard=False) -> None:
         self.points = [start, end]
         if(show_color_flag):
@@ -63,6 +67,7 @@ class Crease:
         else:
             self.crease_type = BORDER
         self.hard = hard
+        self.hard_angle = math.pi
         self.index = -1
         self.origin_index = -1
 
@@ -73,7 +78,7 @@ class Crease:
 
         self.visited = False
         self.undefined = False
-        self.recover_level = -1
+        self.recover_level = 0
 
         self.sign = "equal"
     
@@ -110,17 +115,17 @@ class Crease:
         ]
 
     def k(self):
-        try:
+        if self.points[END][X] != self.points[START][X]:
             k = (self.points[END][Y] - self.points[START][Y]) / (self.points[END][X] - self.points[START][X])
             return k
-        except:
+        else:
             return math.inf
 
     def b(self):
-        try:
+        if self.points[START][X] != self.points[END][X]:
             b = (self.points[END][X] * self.points[START][Y] - self.points[START][X] * self.points[END][Y]) / (self.points[END][X] - self.points[START][X])
             return b
-        except:
+        else:
             return self.points[END][X]
 
     def getPointAxis(self):
@@ -408,7 +413,7 @@ def distance(p1, p2):
 def pointToCrease(p, crease: Crease):
     k = crease.k()
     b = crease.b()
-    if k == math.inf:
+    if k == math.inf or k == -math.inf:
         return abs(b - p[X])
     else:
         return abs(k * p[X] - p[Y] + b) / math.sqrt(k ** 2 + 1)
@@ -473,7 +478,7 @@ def pointOnCrease(point, c: Crease, tolerance=1e-5):
     start = c[START]
     end = c[END]
     k = c.k()
-    if k > 1e5:
+    if abs(k) > 1e5:
         percent_x = 0.5
         percent_y = (point[Y] - start[Y]) / (end[Y] - start[Y])
     else:
@@ -510,6 +515,40 @@ def pointOnCrease(point, c: Crease, tolerance=1e-5):
                 return True
             else:
                 return False
+
+def packTrajectory(trajectory, P_number):
+    dict = {
+        "type": [],
+        "id": [],
+        "reverse": []
+    }
+    for i in range(len(trajectory)):
+        if trajectory[i][0] < P_number:
+            dict["type"].append("A")
+            dict["id"].append(trajectory[i][0])
+        else:
+            dict["type"].append("B")
+            dict["id"].append(trajectory[i][0] - P_number)
+    exist_non_zero_side = 0
+    for i in range(len(trajectory)):
+        if trajectory[i][1] != 0:
+            exist_non_zero_side = trajectory[i][1]
+            break
+    if exist_non_zero_side:
+        for j in range(len(trajectory)):
+            if (j - i) % 2 == 0:
+                dict["reverse"].append(trajectory[i][1])
+            else:
+                dict["reverse"].append(-trajectory[i][1])
+        dict["reverse"][0] = dict["reverse"][1]
+    else:
+        for j in range(len(trajectory)):
+            if j % 2 == 0:
+                dict["reverse"].append(-1)
+            else:
+                dict["reverse"].append(1)
+        dict["reverse"][0] = 1
+    return dict
 
 def pointInPolygon(point, polygon: list, return_min_distance=False, upper_x_bound=math.inf, lower_x_bound=-math.inf):
     angle = 0.0
@@ -608,18 +647,86 @@ def angleBetweenCreases(c1, c2, from_same_start=True):
     else:
         return -math.acos(angle)
 
+def methodToTotalInformation(method, P_points, O_points):
+    total_information = []
+    for i in range(len(method["type"])):
+        point_list = []
+        for j in range(len(method["type"][i])):
+            tsa_point = TSAPoint()
+            tsa_point.point_type = method["type"][i][j]
+            tsa_point.id = method["id"][i][j]
+            tsa_point.dir = method["reverse"][i][j]
+            if tsa_point.point_type == 'A':
+                tsa_point.point = P_points[tsa_point.id]
+            else:
+                tsa_point.point = O_points[tsa_point.id]
+            point_list.append(tsa_point)
+        total_information.append(point_list)
+    return total_information
+
+def getMaxDistance(kps):
+    max_x = max([kps[i][X] for i in range(len(kps))])
+    min_x = min([kps[i][X] for i in range(len(kps))])
+    max_y = max([kps[i][Y] for i in range(len(kps))])
+    min_y = min([kps[i][Y] for i in range(len(kps))])
+    return max(max_x - min_x, max_y - min_y), max_x - min_x, max_y - min_y
+    
+def getTotalBias(units):
+    total_x = 0.0
+    total_y = 0.0
+    count = 0
+    for unit in units:
+        seq_points = unit.getSeqPoint()
+        for p in seq_points:
+            total_x += p[X]
+            total_y += p[Y]
+            count += 1
+    return [total_x / count, total_y / count]
+
 class Unit:
     def __init__(self) -> None:
         self.crease = []
         self.seq_point = []
         self.connection = None
         self.connection_number = None
+        self.mass = []
 
     def reset(self):
         self.crease.clear()
 
     def addCrease(self, c: Crease):
         self.crease.append(c)
+
+    def repair(self, tolerance = 2.):
+        while 1:
+            problem = False
+            i = 0
+            while i < len(self.crease):
+                crease = self.crease[i]
+                length = crease.getLength()
+                if length < tolerance:
+                    problem = True
+                    mid_point = crease.getMidPoint()
+                    self.crease[i - 1].points[END] = mid_point
+                    self.crease[(i + 1) % len(self.crease)].points[START] = mid_point
+                    del(self.crease[i])
+                i += 1
+            if not problem:
+                break
+
+    def setupMass(self, rho):
+        kp_number = len(self.getSeqPoint())
+        self.mass = [0. for _ in range(kp_number)]
+        new_rho = rho / float(kp_number - 2)
+        for i in range(kp_number - 2):
+            for j in range(i + 1, i + 1 + kp_number - 2):
+                current = j % kp_number
+                next = (j + 1) % kp_number
+                area = self.calculateTriArea(i, current, next)
+                self.mass[i] += new_rho * area / 3.0
+                self.mass[current] += new_rho * area / 3.0
+                self.mass[next] += new_rho * area / 3.0
+
     
     def setConnection(self, con):
         self.connection = con
@@ -627,6 +734,15 @@ class Unit:
     def setConnectionNumber(self, num):
         self.connection_number = num
 
+    def calculateTriArea(self, i0, i1, i2):
+        kps = self.getSeqPoint()
+        x0 = kps[i0]
+        x1 = kps[i1]
+        x2 = kps[i2]
+        vec1 = [x1[X] - x0[X], x1[Y] - x0[Y]]
+        vec2 = [x2[X] - x0[X], x2[Y] - x0[Y]]
+        return abs(0.5 * (vec1[X] * vec2[Y] - vec1[Y] * vec2[X]))
+    
     def calculateArea(self):
         kps = self.getSeqPoint()
         start_point = kps[0]
@@ -687,13 +803,18 @@ class Unit:
         return self.seq_point
     
     def getCenter(self):
-        seq_point = self.getSeqPoint()
-        x = 0
-        y = 0
-        for i in range(len(seq_point)):
-            x += seq_point[i][X]
-            y += seq_point[i][Y]
-        return [x / len(seq_point), y / len(seq_point)]
+        seq_point = np.array(self.getSeqPoint())
+        kp_len = len(seq_point)
+        if kp_len == 3:
+            return (seq_point[0] + seq_point[1] + seq_point[2]) / 3
+        else:
+            center_tri = [(seq_point[0] + seq_point[i] + seq_point[i + 1]) / 3 for i in range(1, kp_len - 1)]
+            area_tri = [
+                abs(0.5 * ((seq_point[i][X] - seq_point[0][X]) * (seq_point[i + 1][Y] - seq_point[0][Y]) - (seq_point[i][Y] - seq_point[0][Y]) * (seq_point[i + 1][X] - seq_point[0][X]))) for i in range(1, kp_len - 1)
+            ]
+
+            center = sum([center_tri[k] * area_tri[k] for k in range(kp_len - 2)]) / sum(area_tri)
+            return center
 
 class TSAPoint:
     def __init__(self) -> None:
@@ -713,6 +834,7 @@ class TSAString:
         self.end_type = FREE
         self.ids = [] # start, end
         self.id_types = [] # start, end
+        self.id = -1
     
     def setStringWidth(self, width: float):
         self.width = width
@@ -765,8 +887,106 @@ class TSAString:
 
         return point_list, upper_point_list
 
+class Node:
+    def __init__(self, state, maximum_child, done, action_id, parent=None) -> None:
+        # xn + sqrt(2ln(N) / v)
+        self.state = np.array(state, dtype=np.uint8)
+        self.visits = 1
+        self.reward = 0.0
+        # self.state = state
+        self.maximum_child = maximum_child
+        self.action_id = action_id
+        self.done = done
+        self.children = []
+        self.parent = parent
+
+    def initializeTree(self):
+        self.visits = 1
+        self.reward = 0.0
+        if not self.done:
+            for c in self.children:
+                c.initializeTree()
+
+    def addChild(self, child_state, maximum_child, done, action_id):
+        self.children.append(Node(child_state, maximum_child, done, action_id, self))
+    
+    def update(self, reward):
+        self.reward += reward
+        self.visits += 1
+
+    def fullyExpanded(self):
+        return len(self.children) == self.maximum_child
+
+    def existBestChild(self, standard):
+        exist = False
+        for c in self.children:
+            if c.done and c.reward <= standard:
+                continue
+            elif c.done and c.visits > 1 and c.reward / (c.visits - 1) <= standard:
+                continue
+            elif c.children == None:
+                continue
+            else:
+                exist = True
+                break
+        return exist
+
+    def existChildWithAction(self, action_id):
+        exist = False
+        child = None
+        for c in self.children:
+            if c.action_id == action_id:
+                exist = True
+                child = c
+                break
+        return exist, child
+    
+    def bestChild(self, scalar, standard):
+        best_score = -math.inf
+        best_children = []
+        for c in self.children:
+            if c.done and c.reward <= standard:
+                continue
+            elif c.done and c.visits > 1 and c.reward / (c.visits - 1) <= standard:
+                continue
+            elif c.children == None:
+                continue
+            if c.visits != 1:
+                exploit = c.reward / (c.visits - 1)
+            else:
+                exploit = 0.
+            explore = math.sqrt(2. * math.log(self.visits) / float(c.visits))
+            score = exploit + scalar * explore
+            if score == best_score:
+                best_children.append(c)
+            elif score > best_score:
+                best_children = [c]
+                best_score = score
+        if len(best_children) == 0:
+            raise NotImplementedError
+        best_child = np.random.choice(best_children)
+        action_id = best_child.action_id
+        return best_child, action_id
+
+    def __repr__(self) -> str:
+        # return f"Visits: {self.visits}, Reward: {self.reward}, Done: {self.done}"
+        if self.parent == None:
+            return f"{self.state}"
+        else:
+            if self.visits == 1:
+                return f"{self.state}, 0"
+            else:
+                return f"{self.state}, {self.reward / (self.visits - 1) + math.sqrt(2. * math.log(self.parent.visits) / float(self.visits))}"
+    
 if __name__ == "__main__":
-    tsa = TSAString()
-    tsa.setStringKeyPoint([0.0, 0.0, 0.0], [10.0, 10.0, 0])
-    a, b = tsa.generatePointWithResolution(4)
-    c = 1
+    # tsa = TSAString()
+    # tsa.setStringKeyPoint([0.0, 0.0, 0.0], [10.0, 10.0, 0])
+    # a, b = tsa.generatePointWithResolution(4)
+    # c = 1
+    unit = Unit()
+    unit.addCrease(Crease([0., 0.], [10., 0.], BORDER))
+    unit.addCrease(Crease([10., 0.], [0., 10.], BORDER))
+    unit.addCrease(Crease([0., 10.], [0., 0.], BORDER))
+    center = unit.getCenter()
+    unit.setupMass(1)
+    a = 1

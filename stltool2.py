@@ -1,6 +1,5 @@
 # import numpy as np
 import math
-from operator import eq
 from copy import deepcopy
 
 from utils import *
@@ -58,6 +57,8 @@ class StlMaker:
         self.db_enable = False
 
         self.thin_mode = False
+
+        self.border_nobias = False
 
         self.layer = 3
 
@@ -399,11 +400,13 @@ class StlMaker:
                 next_next_id = (k + 2) % upper_kps_num
                 crease1 = Crease(upper_kps[k], upper_kps[previous_id], BORDER)
                 crease2 = Crease(upper_kps[next_id], upper_kps[next_next_id], BORDER)
-                dir_upper_kp = upper_kps[next_id][0] - upper_kps[k][0]
-                dir_kp = kps[(k + 1 + accumulate_bonus_of_kps) % kp_num][0] - kps[(k + accumulate_bonus_of_kps) % kp_num][0]
+                dir_upper_kp = upper_kps[next_id][X] - upper_kps[k][X]
+                dir_kp = kps[(k + 1 + accumulate_bonus_of_kps) % kp_num][X] - kps[(k + accumulate_bonus_of_kps) % kp_num][X]
+                dir_upper_kp_y = upper_kps[next_id][Y] - upper_kps[k][Y]
+                dir_kp_y = kps[(k + 1 + accumulate_bonus_of_kps) % kp_num][Y] - kps[(k + accumulate_bonus_of_kps) % kp_num][Y]
                 p = calculateIntersectionWithinCrease(crease1, crease2)
                 # if p != None and dir_kp * dir_upper_kp < 0:
-                if dir_kp * dir_upper_kp < -1e-5:
+                if dir_kp * dir_upper_kp < -1e-5 or dir_kp_y * dir_upper_kp_y < -1e-5:
                     problem_point_id.append(k + problem_point_num)
                     intersection = True
                     del upper_kps[k]
@@ -1019,7 +1022,10 @@ class StlMaker:
         for i in range(len(unit.getCrease())):
             ele = unit.getCrease()[i]
             if ele.getType() == BORDER:
-                bias_list.append(bias - border_penalty + 1e-3)
+                if self.border_nobias:
+                    bias_list.append(bias - border_penalty + 1e-3)
+                else:
+                    bias_list.append(bias)
             else:
                 if side == UP:
                     if self.asym and ele.getType() == MOUNTAIN:
@@ -1187,6 +1193,10 @@ class StlMaker:
         else:
             down_strong_modify = True
             upper_strong_modify = True
+        if abs(down_bias - upper_bias) <= 0.0011 * self.min_bias:
+            down_strong_modify = False
+            upper_strong_modify = False
+            
         for ele in another_points_list:
             for point in ele:
                 point[Z] = base_height
@@ -1345,6 +1355,10 @@ class StlMaker:
         else:
             down_strong_modify = True
             upper_strong_modify = True
+        if abs(down_bias - upper_bias) <= 0.0011 * self.min_bias:
+            down_strong_modify = False
+            upper_strong_modify = False
+            
         for ele in another_points_list:
             for point in ele:
                 point[Z] = base_height
@@ -1624,64 +1638,6 @@ class StlMaker:
                         tris.append(ans1)
                         tris.append(ans2)
                     inner_cur = inner_next_ele
-        
-        # #repair
-        # if upper_strong_modify:
-        #     forward_step = 0
-        #     inner_cur = 0
-        #     for cur in range(0, upper_kp_num):
-        #         next_ele = (cur + 1) % upper_kp_num
-        #         inner_next_ele = (inner_cur + 1) % inner_upper_kp_num
-        #         real_id = cur + forward_step
-        #         crease_type = unit.getCrease()[real_id].getType()
-        #         if real_id in inner_upper_problem_id:
-        #             if real_id not in upper_problem_id:
-        #                 if crease_type == VALLEY:
-        #                     ans = self.getTriangle(upper_kps[next_ele], upper_kps[cur], inner_upper_kps[inner_cur])
-        #                     tris.append(ans)
-        #             else:
-        #                 forward_step += 1
-        #                 if crease_type == VALLEY:
-        #                     ans1 = self.getTriangle(upper_kps[next_ele], upper_kps[cur], inner_upper_kps[inner_cur])
-        #                     ans2 = self.getTriangle(inner_upper_kps[inner_next_ele], upper_kps[next_ele], inner_upper_kps[inner_cur])  
-        #                     tris.append(ans1)
-        #                     tris.append(ans2)
-        #                 inner_cur = inner_next_ele
-        #         else:
-        #             if crease_type == VALLEY:
-        #                 ans1 = self.getTriangle(upper_kps[next_ele], upper_kps[cur], inner_upper_kps[inner_cur])
-        #                 ans2 = self.getTriangle(inner_upper_kps[inner_next_ele], upper_kps[next_ele], inner_upper_kps[inner_cur])  
-        #                 tris.append(ans1)
-        #                 tris.append(ans2)
-        #             inner_cur = inner_next_ele
-        # else:
-        #     forward_step = 0
-        #     inner_cur = 0
-        #     for cur in range(0, kp_num):
-        #         next_ele = (cur + 1) % kp_num
-        #         inner_next_ele = (inner_cur + 1) % inner_kp_num
-        #         real_id = cur + forward_step
-        #         crease_type = unit.getCrease()[real_id].getType()
-        #         if real_id in inner_bottom_problem_id:
-        #             if real_id not in bottom_problem_id:
-        #                 if crease_type == MOUNTAIN:
-        #                     ans = self.getTriangle(bottom_kps[next_ele], bottom_kps[cur], inner_bottom_kps[inner_cur])
-        #                     tris.append(ans)
-        #             else:
-        #                 forward_step += 1
-        #                 if crease_type == MOUNTAIN:
-        #                     ans1 = self.getTriangle(bottom_kps[next_ele], bottom_kps[cur], inner_bottom_kps[inner_cur])
-        #                     ans2 = self.getTriangle(inner_bottom_kps[inner_next_ele], bottom_kps[next_ele], inner_bottom_kps[inner_cur])  
-        #                     tris.append(ans1)
-        #                     tris.append(ans2)
-        #                 inner_cur = inner_next_ele
-        #         else:
-        #             if crease_type == MOUNTAIN:
-        #                 ans1 = self.getTriangle(bottom_kps[next_ele], bottom_kps[cur], inner_bottom_kps[inner_cur])
-        #                 ans2 = self.getTriangle(inner_bottom_kps[inner_next_ele], bottom_kps[next_ele], inner_bottom_kps[inner_cur])  
-        #                 tris.append(ans1)
-        #                 tris.append(ans2)
-        #             inner_cur = inner_next_ele
 
         if additional_crease:
             #additional crease

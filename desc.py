@@ -7,6 +7,10 @@ import re
 from utils import MOUNTAIN, VALLEY, BORDER
 import dxfgrabber
 
+ORIGIN = 0
+DATA = 1
+ADD_WIDTH = 2
+
 class KinematicLine:
     def __init__(self) -> None:
         self.lines = []
@@ -16,6 +20,12 @@ class KinematicLine:
 
     def getData(self):
         return self.lines
+    
+    def __getitem__(self, index):
+        return self.lines[index]
+    
+    def __len__(self):
+        return len(self.lines)
 
 class UnitPack:
     def __init__(self) -> None:

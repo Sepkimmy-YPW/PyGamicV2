@@ -1,4 +1,4 @@
-import numpy as np
+# import numpy as np
 import math
 from utils import *
 from copy import deepcopy
@@ -49,8 +49,12 @@ class Miura:
         self.same_flag = [True, True, True] #01 123 46/57
         if function_type == ACTIVE_MIURA:
             self.border_end = self.origin[0] + self.main_length - self.crease_x_length
+            if self.border_start > self.border_end:
+                self.border_start = self.border_end
         else:
             self.border_end = self.origin[0] + self.main_length + self.crease_x_length
+            if self.border_start > self.border_end:
+                self.border_start = self.border_end
 
     def getFunctionType(self):
         return self.function_type
@@ -1019,10 +1023,10 @@ class UnitPackParser:
 
                     for j in range(len(self.new_lines)):
                         if (j not in sub_index) and (j not in not_consider_list):
-                            if distance(self.new_lines[j][START], end) < 1e-5:
+                            if distance(self.new_lines[j][START], end) < 1e-2:
                                 queue.insert(0, (j, level + 1, START))
                                 index.insert(0, sub_index + [j])
-                            elif distance(self.new_lines[j][END], end) < 1e-5:
+                            elif distance(self.new_lines[j][END], end) < 1e-2:
                                 queue.insert(0, (j, level + 1, END))
                                 index.insert(0, sub_index + [j])
             
@@ -1059,7 +1063,7 @@ class UnitPackParserReverse:
         min_x = min([self.new_kps[i][X] for i in range(len(self.new_kps))])
         max_y = max([self.new_kps[i][Y] for i in range(len(self.new_kps))])
         min_y = min([self.new_kps[i][Y] for i in range(len(self.new_kps))])
-        return max(max_x - min_x, max_y - min_y)
+        return max(max_x - min_x, max_y - min_y), max_x - min_x, max_y - min_y
     
     def getTotalBias(self, units=None):
         if units == None:
@@ -1212,6 +1216,7 @@ class TreeBasedOrigamiGraph:
 
         for line_i in range(len(self.lines)):
             line = self.lines[line_i]
+            line.visited = False
             start_point = line[START]
             end_point = line[END]
             crease_type = line.getType()
@@ -1327,6 +1332,9 @@ class TreeBasedOrigamiGraph:
             if line.getType() == BORDER:
                 visited -= 1
 
+        backup_visited = visited
+        backup_initial_crease_id = []
+
         # calculate level and coeff for creases
         while visited:
             crease_id = []
@@ -1343,15 +1351,30 @@ class TreeBasedOrigamiGraph:
                     crease_id.append(i)
                     break
             
+            previous_min_level = 0
             while len(crease_id):
                 index = 0
                 min_level = self.lines[crease_id[0]].level
                 min_index = 0
+                min_problem = False
 
                 for index in range(1, len(crease_id)):
                     if self.lines[crease_id[index]].level < min_level:
                         min_index = index
                         min_level = self.lines[crease_id[index]].level
+                        if min_level < previous_min_level:
+                            previous_min_level = min_level
+                            backup_initial_crease_id.append(crease_id[index])
+                            crease_id = deepcopy(backup_initial_crease_id)
+                            min_problem = True
+                            break
+                
+                previous_min_level = min_level
+                if min_problem:
+                    for line_i in self.lines:
+                        line_i.visited = False
+                    visited = backup_visited
+                    continue
                     
                 crease_first_id = crease_id[min_index]
                 del(crease_id[min_index])
@@ -1370,11 +1393,13 @@ class TreeBasedOrigamiGraph:
                                 new_crease_id = vertex.connection_index[i]
                                 if adder != 0:
                                     self.lines[new_crease_id].level = int(self.lines[crease_first_id].level + adder)
+                                    self.lines[new_crease_id].recover_level = self.lines[new_crease_id].level
                                     self.lines[new_crease_id].coeff = 1.
                                     self.lines[new_crease_id].visited = True
                                     self.lines[new_crease_id].undefined = True
                                 else:
                                     self.lines[new_crease_id].level = int(self.lines[crease_first_id].level)
+                                    self.lines[new_crease_id].recover_level = self.lines[new_crease_id].level
                                     self.lines[new_crease_id].coeff = self.lines[crease_first_id].coeff * divider
                                     self.lines[new_crease_id].visited = True
                                     self.lines[new_crease_id].undefined = self.lines[crease_first_id].undefined
@@ -1397,6 +1422,7 @@ class TreeBasedOrigamiGraph:
                                     else:
                                         if adder >= 0:
                                             self.lines[new_crease_id].level = new_level
+                                            self.lines[new_crease_id].recover_level = self.lines[new_crease_id].level
                                             crease_id.append(vertex.connection_index[i])
 
                                 new_coeff = self.lines[crease_first_id].coeff * divider
@@ -1407,10 +1433,10 @@ class TreeBasedOrigamiGraph:
                                 self.lines[new_crease_id].undefined = False
         
 
-                # for i in range(4):
-                #     self.lines[vertex.connection_index[i]].level = vertex.level_list[i]
-                #     self.lines[vertex.connection_index[i]].coeff = vertex.coeff_list[i]
-                #     self.lines[vertex.connection_index[i]].visited = True
+                        # for i in range(4):
+                        #     self.lines[vertex.connection_index[i]].level = vertex.level_list[i]
+                        #     self.lines[vertex.connection_index[i]].coeff = vertex.coeff_list[i]
+                        #     self.lines[vertex.connection_index[i]].visited = True
 
         self.sequence_max_level = self.lines[0].level
         self.sequence_min_level = self.lines[0].level
@@ -1421,7 +1447,7 @@ class TreeBasedOrigamiGraph:
             elif level < self.sequence_min_level:
                 self.sequence_min_level = level
         
-        for level in range(self.sequence_min_level, self.sequence_max_level + 1):
+        for level in range(int(self.sequence_min_level), int(self.sequence_max_level + 1)):
             for i in range(len(self.lines)):
                 if self.lines[i].level == level:
                     break
