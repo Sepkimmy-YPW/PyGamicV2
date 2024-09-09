@@ -2084,9 +2084,9 @@ class OrigamiSimulator:
         self.dt_bonus[0] = 1.
 
         if self.sim_mode == self.FOLD_SIM:
-            self.n = 24 #仿真的时间间隔
+            self.n = 6 #仿真的时间间隔
             self.dt = 0.1 / self.n #仿真的时间间隔
-            self.substeps = round(1. / 120. / self.dt) #子步长，用于渲染
+            self.substeps = round(1. / 60. / self.dt) #子步长，用于渲染
             self.basic_dt = self.substeps * self.dt
             self.now_t = 0.
             self.lame_k = 15.
@@ -2097,7 +2097,7 @@ class OrigamiSimulator:
                 self.camera.up(0.2, 0.4, 0.9)
                 self.camera.lookat(0, 0, 0)
             self.viscousity = 0.0
-            self.ITER = 4
+            self.ITER = 8
         else:
             self.n = 60 #仿真的时间间隔
             self.dt = 0.1 / self.n #仿真的时间间隔
@@ -2644,11 +2644,11 @@ class OrigamiSimulator:
                     self.scene.lines(vertices=self.string_vertex, width=1, color=(.6, .03, .8))
 
                 self.scene.particles(centers=self.border_vertex,
-                        radius=3,
+                        radius=1,
                         color=(.00, .00, .00))
             
                 self.scene.particles(centers=self.endpoint_vertex, radius=1., color=(.6, .03, .8))
-                self.scene.particles(centers=self.intersection_points, radius=0.2, color=(.6, .03, .8))
+                self.scene.particles(centers=self.intersection_points, radius=0.4, color=(.6, .03, .8))
                 self.string_params[0] = self.gui.slider_float('String_k', self.string_params[0], 0.0, 10000.0)
 
             else:
@@ -2671,7 +2671,7 @@ class OrigamiSimulator:
             self.window.show()
 
 if __name__ == "__main__":
-    ori_name = "mountain15"
+    ori_name = "miura"
     ori = OrigamiSimulator(origami_name=ori_name, fast_simulation=True)
     ori.start(ori_name, 4, ori.FOLD_SIM)
     ori.run(False, False)
