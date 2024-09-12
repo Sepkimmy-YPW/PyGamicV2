@@ -85,7 +85,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
 
         self.pixmap_length = 750
         self.pixmap_width = 450
-        self.draw_panel_x_bias = 164
+        self.draw_panel_x_bias = 169
         self.draw_panel_y_bias = 62
 
         # --Define parameters for application-- #
@@ -273,6 +273,11 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.widget.setVisible(False)
         self.widget_edit_kl.setVisible(False)
         self.widget_edit_sequence.setVisible(False)
+
+        self.P_candidate = []
+        self.P_candidate_connection_index = []
+
+        self.show_index = False
 
         self.full_description_mode = True
 
@@ -503,10 +508,26 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
     def addPassStringUsingRealAxis(self, real_x, real_y):
         pass
 
-    def addTsaAPoint(self):
-        resolution_value, ok = QInputDialog.getInt(self, "TSA Input: ", "Please input TSA A point ID: ", 0, 0, self.pref_pack["tsa_resolution"] - 1, 1)
+    def addTSACandidators(self):
+        content, ok = QInputDialog.getText(self, "TSA Candidators Input", "Please input the axis of TSA candidator: ")
         if ok:
-            self.addTsaAPointWithResolutionValue(resolution_value)
+            ans = re.findall(r"\d+\.?\d*", content)
+            if len(ans) != 3:
+                self.updateState("Failed to add candidator, make sure that you input x, y and z of the axis", self.state)
+            else:
+                connection, ok = QInputDialog.getInt(self, "Candidator Connection: ", "Please select a unit for connection: ", -1, -1, len(self.units) - 1, 1)
+                if ok:
+                    self.P_candidate.append([float(ans[0]), float(ans[1]), float(ans[2])])
+                    self.P_candidate_connection_index.append(connection)
+                    self.updateState(f"Succeed to add candidator {[float(ans[0]), float(ans[1]), float(ans[2])]} connected to {connection}", self.state)
+
+    def addTsaAPoint(self):
+        if len(self.P_candidate):
+            index, ok = QInputDialog.getInt(self, "TSA Input: ", "Please input TSA A point ID: ", 0, 0, len(self.P_candidate) - 1, 1)
+            if ok:
+                self.addStringPoint(self.P_candidate[index][X], self.P_candidate[index][Y], index)
+        else:
+            self.updateState(f"Please add TSA A candidators first", self.state)
     
     def addTsaAPointWithResolutionValue(self, resolution_value):
         origami_size = [self.origami_length, self.origami_width]
@@ -970,6 +991,9 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.actionAs_Full_description_Data.triggered.connect(self.exportDescriptionData)
         self.actionEdit_Sequence_S.triggered.connect(self.editSequence)
         self.actionImport_string_path.triggered.connect(self.importStringPath)
+        self.actionAdd_TSA_A_candidators.triggered.connect(self.addTSACandidators)
+        self.actionShow_Index.triggered.connect(self.showIndex)
+        self.actionDelete_TSA_A_Candidators.triggered.connect(self.deleteTSACandidators)
 
     def defineButton(self):
         """
@@ -1027,6 +1051,19 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.doubleSpinBox_coeff_value.valueChanged.connect(self.changeCoeff)
         self.spinBox_recover_level_value.valueChanged.connect(self.changeRecoverLevel)
         self.doubleSpinBox_hard_angle_value.valueChanged.connect(self.changeHardAngle)
+
+    def deleteTSACandidators(self):
+        items = []
+        # List all P_CANDIDATE
+        for i in range(len(self.P_candidate)):
+            items.append(f"Candidator {str(i)}, Axis: [{self.P_candidate[i][X]}, {self.P_candidate[i][Y]}, {self.P_candidate[i][Z]}], connecting to {self.P_candidate_connection_index[i]}")
+        selected_item, ok = QInputDialog.getItem(self, "Select Miura Item", "Select a Miura combo:", items)
+        # If press ok
+        if ok:
+            index = items.index(selected_item)
+            del(self.P_candidate[index])
+            del(self.P_candidate_connection_index[index])
+            self.updateState(f"Succeed to delete Candidator {index}", self.state)
 
     def design(self):
         """
@@ -1384,6 +1421,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
 
             #4 Add strings
             try:
+                self.P_candidate = input_json['P_candidators']["points"]
+                self.P_candidate_connection_index = input_json['P_candidators']["connections"]
                 self.string_total_information = []
                 self.strings = []   
                 string_type_list = input_json['strings']['type']
@@ -1397,7 +1436,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                         self.string_type = TOP
                     for j in range(len(string_type_list[i])):
                         if string_type_list[i][j] == 'A':
-                            self.addTsaAPointWithResolutionValue(string_id_list[i][j])
+                            index = string_id_list[i][j]
+                            self.addStringPoint(self.P_candidate[index][X], self.P_candidate[index][Y], index)
                         else:
                             unit_axis = self.units[string_id_list[i][j]].getCenter()
                             self.addStringPoint(unit_axis[X], unit_axis[Y], string_id_list[i][j], 'B', string_reverse_list[i][j])
@@ -1648,6 +1688,17 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.painter.setPen(QPen(QColor(255, 223, 0), round(line_weight), Qt.SolidLine))
             self.painter.drawLine(highlight_crease_sequence[START][X], highlight_crease_sequence[START][Y], highlight_crease_sequence[END][X], highlight_crease_sequence[END][Y])
         
+        self.painter.setPen(QPen(QColor(0, 0, 0), round(line_weight), Qt.SolidLine))
+        if self.show_index:
+            for i in range(len(self.units)):
+                pixel_center = self.toPixel(self.units[i].getCenter())   
+                self.painter.drawText(QPoint(pixel_center[X], pixel_center[Y]), str(i))
+            for i in range(len(self.P_candidate)):
+                pixel_center = self.toPixel(self.P_candidate[i])
+                center = QPoint(pixel_center[X], pixel_center[Y])
+                self.painter.drawRect(pixel_center[X] - 2, pixel_center[Y] - 2, 4, 4)
+                self.painter.drawText(center, str(i))
+
         self.draw_panel.setPixmap(self.pixmap)
         self.painter.end()
 
@@ -2276,6 +2327,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                     "type": [[self.string_total_information[i][j].point_type for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))],
                     "id": [[self.string_total_information[i][j].id for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))],
                     "reverse": [[self.string_total_information[i][j].dir for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))]
+                },
+                "P_candidators": {
+                    "points": self.P_candidate,
+                    "connections": self.P_candidate_connection_index 
                 }
             }
 
@@ -2317,6 +2372,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
         self.add_bias_flag = []
         self.a_string = []
         self.string_total_information = []
+        self.P_candidate = []
+        self.P_candidate_connection_index = []
 
         # Pack of add hole mode
         self.checkBox_add_hole_mode.setChecked(False)
@@ -2987,7 +3044,6 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 ori_sim = OrigamiSimulator(use_gui=False, fast_simulation=self.pref_pack["fast_simulation_mode"])
 
                 # ori_sim.string_total_information = deepcopy(self.string_total_information)
-                ori_sim.pref_pack = deepcopy(self.pref_pack)
                 ori_sim.start("phys_sim", max_edge, ori_sim.TSA_SIM)
                 ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
                 ori_sim.fast_simulation_mode = False
@@ -2998,7 +3054,6 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             # # set string parameters
             # # ori_sim.strings = deepcopy(self.strings)
             # ori_sim.string_total_information = deepcopy(self.string_total_information)
-            # ori_sim.pref_pack = deepcopy(self.pref_pack)
 
             # ori_sim.start("phys_sim", max_edge, ori_sim.TSA_SIM)
             # ori_sim.enable_tsa_rotate = ori_sim.string_length_decrease_step
@@ -3061,7 +3116,6 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             # set string parameters
             # ori_sim.strings = deepcopy(self.strings)
             ori_sim.string_total_information = deepcopy(self.string_total_information)
-            ori_sim.pref_pack = deepcopy(self.pref_pack)
             
             ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
 
@@ -3071,30 +3125,11 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.exportDescriptionData('./descriptionData/phys_sim.json')
             ori_sim = OrigamiSimulator(use_gui=True, debug_mode=self.pref_pack['debug_mode'], fast_simulation=self.pref_pack["fast_simulation_mode"])
             # ori_sim.string_total_information = deepcopy(self.string_total_information)
-            ori_sim.pref_pack = deepcopy(self.pref_pack)
             ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
             ori_sim.run(False, False)
 
     def physicalSimulationExplicit(self):
         pass
-        # # --Physical Sim module for simulate the folding process of origami-- #
-        # self.exportAsDxf("./dxfResult/phys_sim.dxf")
-
-        # max_edge = 0
-        # for ele in self.units:
-        #     edge = len(ele.crease)
-        #     if edge > max_edge:
-        #         max_edge = edge
-
-        # ori_sim = OrigamiSimulatorE(use_gui=True, debug_mode=self.pref_pack['debug_mode'])
-        # # set string parameters
-        # # ori_sim.strings = deepcopy(self.strings)
-        # ori_sim.string_total_information = deepcopy(self.string_total_information)
-        # ori_sim.pref_pack = deepcopy(self.pref_pack)
-        
-        # ori_sim.start("phys_sim", max_edge, ori_sim.FOLD_SIM)
-
-        # ori_sim.run()
 
     def plotJsonReadFile(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -3370,6 +3405,10 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                     "type": [[self.string_total_information[i][j].point_type for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))],
                     "id": [[self.string_total_information[i][j].id for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))],
                     "reverse": [[self.string_total_information[i][j].dir for j in range(len(self.string_total_information[i]))] for i in range(len(self.string_total_information))]
+                },
+                "P_candidators": {
+                    "points": self.P_candidate,
+                    "connections": self.P_candidate_connection_index 
                 }
             }
             for i in range(self.origami_number):
@@ -3531,6 +3570,15 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             except:
                 pass
 
+    def showIndex(self):
+        if self.show_index:
+            self.show_index = False
+            self.actionShow_Index.setText("Show Index")
+        else:
+            self.show_index = True
+            self.actionShow_Index.setText("Hide Index")
+
+
     def showNone(self):
         self.show_square = None
         
@@ -3647,12 +3695,15 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.actionCalculate_Sequence.setEnabled(False)
             self.actionEdit_Sequence_S.setEnabled(False)
             self.actionImport_string_path.setEnabled(False)
+            self.actionAdd_TSA_A_candidators.setEnabled(False)
+            self.actionDelete_TSA_A_Candidators.setEnabled(False)
 
             # Pack of connection
             self.checkBox_connection.setEnabled(False)
             self.spinbox_connection_radius.setEnabled(False)
             self.spinbox_con_left_length.setEnabled(False)
             self.spinbox_con_right_length.setEnabled(False)
+            
 
             # Modify the state label
             self.label_state.setText(message_type + "::" + state)
@@ -3690,6 +3741,8 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.actionCalculate_Sequence.setEnabled(False)
             self.actionEdit_Sequence_S.setEnabled(False)
             self.actionImport_string_path.setEnabled(False)
+            self.actionAdd_TSA_A_candidators.setEnabled(False)
+            self.actionDelete_TSA_A_Candidators.setEnabled(False)
 
             # Pack of connection
             self.checkBox_connection.setEnabled(False)
@@ -3733,6 +3786,11 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.actionCalculate_Sequence.setEnabled(True)
             self.actionEdit_Sequence_S.setEnabled(True)
             self.actionImport_string_path.setEnabled(True)
+            self.actionAdd_TSA_A_candidators.setEnabled(True)
+            if len(self.P_candidate):
+                self.actionDelete_TSA_A_Candidators.setEnabled(True)
+            else:
+                self.actionDelete_TSA_A_Candidators.setEnabled(False)
 
             # Pack of connection
             self.checkBox_connection.setEnabled(True)

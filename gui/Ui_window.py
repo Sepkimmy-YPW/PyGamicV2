@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2024 Summer\pygamic\gui\window.ui'
+# Form implementation generated from reading ui file 'd:\BaiduSyncdisk\2024 Summer\pygamic-release\pygamic\gui\window.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.4
 #
@@ -497,6 +497,12 @@ class Ui_MainWindow(object):
         self.actionAs_Full_description_Data.setObjectName("actionAs_Full_description_Data")
         self.actionEdit_Sequence_S = QtWidgets.QAction(MainWindow)
         self.actionEdit_Sequence_S.setObjectName("actionEdit_Sequence_S")
+        self.actionAdd_TSA_A_candidators = QtWidgets.QAction(MainWindow)
+        self.actionAdd_TSA_A_candidators.setObjectName("actionAdd_TSA_A_candidators")
+        self.actionShow_Index = QtWidgets.QAction(MainWindow)
+        self.actionShow_Index.setObjectName("actionShow_Index")
+        self.actionDelete_TSA_A_Candidators = QtWidgets.QAction(MainWindow)
+        self.actionDelete_TSA_A_Candidators.setObjectName("actionDelete_TSA_A_Candidators")
         self.menuExport_E.addAction(self.actionAs_Dxf)
         self.menuExport_E.addAction(self.actionAs_Split_Dxf)
         self.menuExport_E.addAction(self.actionAs_Stl)
@@ -519,6 +525,8 @@ class Ui_MainWindow(object):
         self.menuEdit_E.addAction(self.menuAdd_Module.menuAction())
         self.menuEdit_E.addAction(self.actionAdd_Holes)
         self.menuEdit_E.addSeparator()
+        self.menuEdit_E.addAction(self.actionAdd_TSA_A_candidators)
+        self.menuEdit_E.addAction(self.actionDelete_TSA_A_Candidators)
         self.menuEdit_E.addAction(self.actionAdd_TSA_A_point)
         self.menuEdit_E.addAction(self.actionEdit_kl_E)
         self.menuEdit_E.addAction(self.actionExpert_Mode_E)
@@ -527,6 +535,7 @@ class Ui_MainWindow(object):
         self.menuWindow_W.addAction(self.actionView_Curve)
         self.menuWindow_W.addAction(self.actionImport_Directions_D)
         self.menuWindow_W.addSeparator()
+        self.menuWindow_W.addAction(self.actionShow_Index)
         self.menuTool_T.addAction(self.actionCDF_Curve_Fitting_F)
         self.menuTool_T.addAction(self.actionPhysical_Simulation_P)
         self.menuTool_T.addAction(self.actionExplicit_Simulation_E)
@@ -652,3 +661,6 @@ class Ui_MainWindow(object):
         self.actionCalculate_Sequence.setText(_translate("MainWindow", "Calculate Sequence"))
         self.actionAs_Full_description_Data.setText(_translate("MainWindow", "As Full-description Data..."))
         self.actionEdit_Sequence_S.setText(_translate("MainWindow", "Edit Sequence...(&S)"))
+        self.actionAdd_TSA_A_candidators.setText(_translate("MainWindow", "Add TSA A Candidators"))
+        self.actionShow_Index.setText(_translate("MainWindow", "Show Index"))
+        self.actionDelete_TSA_A_Candidators.setText(_translate("MainWindow", "Delete TSA A Candidators"))

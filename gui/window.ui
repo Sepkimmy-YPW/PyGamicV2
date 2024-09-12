@@ -1498,6 +1498,8 @@
     <addaction name="menuAdd_Module"/>
     <addaction name="actionAdd_Holes"/>
     <addaction name="separator"/>
+    <addaction name="actionAdd_TSA_A_candidators"/>
+    <addaction name="actionDelete_TSA_A_Candidators"/>
     <addaction name="actionAdd_TSA_A_point"/>
     <addaction name="actionEdit_kl_E"/>
     <addaction name="actionExpert_Mode_E"/>
@@ -1511,6 +1513,7 @@
     <addaction name="actionView_Curve"/>
     <addaction name="actionImport_Directions_D"/>
     <addaction name="separator"/>
+    <addaction name="actionShow_Index"/>
    </widget>
    <widget class="QMenu" name="menuTool_T">
     <property name="title">
@@ -1693,6 +1696,21 @@
   <action name="actionEdit_Sequence_S">
    <property name="text">
     <string>Edit Sequence...(&amp;S)</string>
+   </property>
+  </action>
+  <action name="actionAdd_TSA_A_candidators">
+   <property name="text">
+    <string>Add TSA A Candidators</string>
+   </property>
+  </action>
+  <action name="actionShow_Index">
+   <property name="text">
+    <string>Show Index</string>
+   </property>
+  </action>
+  <action name="actionDelete_TSA_A_Candidators">
+   <property name="text">
+    <string>Delete TSA A Candidators</string>
    </property>
   </action>
  </widget>

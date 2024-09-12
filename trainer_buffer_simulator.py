@@ -70,10 +70,13 @@ FOLDING_MAXIMUM = 0.95
 
 BUFFER_INIT = 5000
 
-def workerMultisim(mlist, method, pointer, pref_pack, max_edge, units, max_size, total_bias):
+def workerMultisim(mlist, method, pointer, p_points, p_connections, max_edge, units, max_size, total_bias):
     ori_sim = OrigamiSimulator(use_gui=False, origami_name=origami, fast_simulation=True)
 
-    ori_sim.pref_pack = pref_pack
+    ori_sim.P_number = len(p_points)
+    ori_sim.P_candidate = p_points
+    ori_sim.P_candidate_connection = p_connections
+    
     ori_sim.method = method
 
     ori_sim.startOnlyTSA(units, max_size, total_bias, max_edge)
@@ -157,19 +160,17 @@ class Env:
         self.max_size, max_x, max_y = getMaxDistance(self.kps)
         self.total_bias = getTotalBias(self.units)
 
-        self.panel_size = 100.
-        self.panel_resolution = 6
         self.unit_number = len(self.units)
         self.best_reward = 0.0
         self.node_num = 1
 
         self.string_number = string_number
 
+        self.P_candidators = input_json["P_candidators"]["points"]
+        self.P_candidators_connections = input_json["P_candidators"]["connections"]
+
         self.P_points = [
-            self.panel_size * np.array([
-                math.cos(2. * math.pi * i / self.panel_resolution), 
-                math.sin(2. * math.pi * i / self.panel_resolution)
-            ]) + np.array([max_x, max_y]) / 2.0 for i in range(self.panel_resolution)
+            np.array(self.P_candidators[i]) for i in range(len(self.P_points))
         ]
 
         self.O_points = [
@@ -192,10 +193,7 @@ class Env:
             while pointer < len(methods):
                 p = multiprocessing.Process(target=workerMultisim, args=(
                         mlist, methods[pointer], pointer,
-                        {
-                            "tsa_resolution": self.panel_resolution,
-                            "tsa_radius": self.panel_size
-                        }, self.max_edge, self.units, self.max_size, self.total_bias
+                        self.P_points, self.P_candidators_connections, self.max_edge, self.units, self.max_size, self.total_bias
                     )
                 )
                 p_list.append(p)

@@ -184,8 +184,6 @@ class Env:
         self.max_size, max_x, max_y = getMaxDistance(self.kps)
         self.total_bias = getTotalBias(self.units)
 
-        self.panel_size = 100.
-        self.panel_resolution = 6
         self.unit_number = len(self.units)
         self.best_reward = 0.0
         self.node_num = 1
@@ -200,11 +198,9 @@ class Env:
 
         self.string_number = string_number
 
+        self.P_candidators = input_json["P_candidators"]["points"]
         self.P_points = [
-            self.panel_size * np.array([
-                math.cos(2. * math.pi * i / self.panel_resolution), 
-                math.sin(2. * math.pi * i / self.panel_resolution)
-            ]) + np.array([max_x, max_y]) / 2.0 for i in range(self.panel_resolution)
+            np.array(self.P_candidators[i]) for i in range(len(self.P_candidators))
         ]
         self.mid_x = max_x / 2.
         self.mid_y = max_y / 2.
@@ -214,7 +210,7 @@ class Env:
         ]
         
         self.state_number = self.string_number * (self.unit_number + 2)
-        self.action_number = self.panel_resolution + self.unit_number
+        self.action_number = len(self.P_points) + self.unit_number
 
         self.current_state = np.array([0. for _ in range(self.state_number)])
 
@@ -251,16 +247,16 @@ class Env:
         
         # Create Root
         if not calculate_number:
-            self.root_node = Node(0, self.panel_resolution, 0, 0)
+            self.root_node = Node(0, len(self.P_points), 0, 0)
         else:
-            self.root_node = Node(deepcopy(self.current_state), self.panel_resolution, 0, 0)
+            self.root_node = Node(deepcopy(self.current_state), len(self.P_points), 0, 0)
         
-        # self.action_number = max(max(self.valid_action_num), self.panel_resolution)
+        # self.action_number = max(max(self.valid_action_num), len(self.P_points))
     def initialize(self):
         if not calculate_number:
-            self.root_node = Node(0, self.panel_resolution, 0, 0)
+            self.root_node = Node(0, len(self.P_points), 0, 0)
         else:
-            self.root_node = Node(deepcopy(self.current_state), self.panel_resolution, 0, 0)
+            self.root_node = Node(deepcopy(self.current_state), len(self.P_points), 0, 0)
 
     def treePolicy(self, node: Node, scalar):
         global cut_num
@@ -364,13 +360,13 @@ class Env:
         if not calculate_number:
             node.addChild(
                 self.current_stand_point_id, 
-                self.valid_action_num[self.current_stand_point_id] if not self.temp_done else self.panel_resolution,
+                self.valid_action_num[self.current_stand_point_id] if not self.temp_done else len(self.P_points),
                 done, action
             )
         else:
             node.addChild(
                 deepcopy(next_state), 
-                self.valid_action_num[self.current_stand_point_id] if not self.temp_done else self.panel_resolution,
+                self.valid_action_num[self.current_stand_point_id] if not self.temp_done else len(self.P_points),
                 done, action
             )
         return node.children[-1]
@@ -390,12 +386,12 @@ class Env:
 
         for old_stand_point_id in range(self.action_number):
             for current_stand_point_id in range(old_stand_point_id, self.action_number):
-                if old_stand_point_id < self.panel_resolution and current_stand_point_id < self.panel_resolution:
+                if old_stand_point_id < len(self.P_points) and current_stand_point_id < len(self.P_points):
                     self.valid_matrix[old_stand_point_id][current_stand_point_id] = -10
                     self.valid_matrix[current_stand_point_id][old_stand_point_id] = -10
                 else:
-                    old_stand_point = self.P_points[old_stand_point_id] if old_stand_point_id < self.panel_resolution else self.O_points[old_stand_point_id - self.panel_resolution]
-                    new_stand_point = self.P_points[current_stand_point_id] if current_stand_point_id < self.panel_resolution else self.O_points[current_stand_point_id - self.panel_resolution]
+                    old_stand_point = self.P_points[old_stand_point_id] if old_stand_point_id < len(self.P_points) else self.O_points[old_stand_point_id - len(self.P_points)]
+                    new_stand_point = self.P_points[current_stand_point_id] if current_stand_point_id < len(self.P_points) else self.O_points[current_stand_point_id - len(self.P_points)]
                     intersection_ids = self.calculateIntersectionWithCreases(old_stand_point, new_stand_point, self.lines)
                     valid = 0
                     if len(intersection_ids) > 0:
@@ -435,12 +431,12 @@ class Env:
         for k in range(length):
             trajectory = trajectories[k]
             for i in range(len(trajectory)):
-                if trajectory[i][0] < self.panel_resolution:
+                if trajectory[i][0] < len(self.P_points):
                     dict["type"][k].append("A")
                     dict["id"][k].append(trajectory[i][0])
                 else:
                     dict["type"][k].append("B")
-                    dict["id"][k].append(trajectory[i][0] - self.panel_resolution)
+                    dict["id"][k].append(trajectory[i][0] - len(self.P_points))
             exist_non_zero_side = 0
             for i in range(len(trajectory)):
                 if trajectory[i][1] != 0:
@@ -523,14 +519,14 @@ class Env:
             return np.random.choice(self.action_number, 1).item()
         else:
             if self.temp_done:
-                return np.random.choice(self.panel_resolution, 1).item()
+                return np.random.choice(len(self.P_points), 1).item()
             else:
                 valid_number = self.valid_action_num[self.current_stand_point_id]
                 return np.random.choice(valid_number, 1).item()
 
     def getRange(self):
         if self.temp_done:
-            return self.panel_resolution
+            return len(self.P_points)
         else:
             return self.valid_action_num[self.current_stand_point_id]
         
@@ -590,7 +586,7 @@ class Env:
 
     #     ori_sim.string_total_information = methodToTotalInformation(method, self.P_points, self.O_points)
     #     ori_sim.pref_pack = {
-    #         "tsa_resolution": self.panel_resolution,
+    #         "tsa_resolution": len(self.P_points),
     #         "tsa_radius": self.panel_size
     #     }
 
@@ -770,7 +766,7 @@ class Env:
             while 1:
                 if not self.fake_step:
                     if self.temp_done:
-                        choose_time = np.zeros(self.panel_resolution)
+                        choose_time = np.zeros(len(self.P_points))
                     else:
                         choose_time = np.zeros(self.valid_action_num[self.current_stand_point_id])
                 action = self.sample(True)
@@ -829,20 +825,20 @@ class Env:
                 for i in range(string_length - 1):
                     current_point_id = trajectory[i][0]
                     next_point_id = trajectory[i + 1][0]
-                    current_point = self.P_points[current_point_id] if current_point_id < self.panel_resolution else self.O_points[current_point_id - self.panel_resolution]
-                    next_point = self.P_points[next_point_id] if next_point_id < self.panel_resolution else self.O_points[next_point_id - self.panel_resolution]
+                    current_point = self.P_points[current_point_id] if current_point_id < len(self.P_points) else self.O_points[current_point_id - len(self.P_points)]
+                    next_point = self.P_points[next_point_id] if next_point_id < len(self.P_points) else self.O_points[next_point_id - len(self.P_points)]
                     if i != 0:
                         v1 = np.array([current_point[X] - self.mid_x, current_point[Y] - self.mid_y])
                         v2 = np.array([next_point[X] - current_point[X], next_point[Y] - current_point[Y]])
                         div_one_string += v1.dot(v2) / np.linalg.norm(v1) / np.linalg.norm(v2)
-                        # if i == 1 or (i == string_length - 2 and next_point_id <= self.panel_resolution):
+                        # if i == 1 or (i == string_length - 2 and next_point_id <= len(self.P_points)):
                         #     external_div.append([div_one_string[X], div_one_string[Y]])
                         # div[h] += 1 if v1.dot(v2) / np.linalg.norm(v1) / np.linalg.norm(v2) >= 0 else -1
-                    if i != string_length - 2 or (i == string_length - 2 and next_point_id > self.panel_resolution):
+                    if i != string_length - 2 or (i == string_length - 2 and next_point_id > len(self.P_points)):
                         v1 = np.array([next_point[X] - self.mid_x, next_point[Y] - self.mid_y])
                         v2 = -np.array([next_point[X] - current_point[X], next_point[Y] - current_point[Y]])
                         div_one_string += v1.dot(v2) / np.linalg.norm(v1) / np.linalg.norm(v2)
-                        # if i == 0 or (i == string_length - 2 and next_point_id > self.panel_resolution):
+                        # if i == 0 or (i == string_length - 2 and next_point_id > len(self.P_points)):
                         #     external_div.append([div_one_string[X], div_one_string[Y]])
 
                         # div[h] += 1 if v1.dot(v2) / np.linalg.norm(v1) / np.linalg.norm(v2) >= 0 else -1
@@ -858,18 +854,18 @@ class Env:
         go_over_all_units = [0. for _ in range(len(trajectories))]
         for h in range(len(trajectories)):
             strings = trajectories[h]
-            duplicated_number = [0 for _ in range(self.panel_resolution + self.unit_number)]
+            duplicated_number = [0 for _ in range(len(self.P_points) + self.unit_number)]
             total_point_number = 0
             for trajectory in strings:
                 string_length = len(trajectory)
                 total_point_number += string_length
-                if trajectory[0][0] < self.panel_resolution:
+                if trajectory[0][0] < len(self.P_points):
                     total_point_number -= 1
-                if trajectory[-1][0] < self.panel_resolution:
+                if trajectory[-1][0] < len(self.P_points):
                     total_point_number -= 1
                 for i in range(string_length):
                     duplicated_number[trajectory[i][0]] += 1
-            coef = sum([1 if duplicated_number[i] > 0 else 0 for i in range(self.panel_resolution, len(duplicated_number))])
+            coef = sum([1 if duplicated_number[i] > 0 else 0 for i in range(len(self.P_points), len(duplicated_number))])
             go_over_all_units[h] = coef / (self.unit_number)
             x = coef / total_point_number
             if self.string_number == 1:
@@ -882,13 +878,13 @@ class Env:
         As = [0 for _ in range(len(trajectories))]
         for h in range(len(trajectories)):
             strings = trajectories[h]
-            duplicated_number = [0 for _ in range(self.panel_resolution)]
+            duplicated_number = [0 for _ in range(len(self.P_points))]
             for k in range(len(strings)):
                 trajectory = strings[k]
                 if len(trajectory) > 0:
-                    if trajectory[0][0] < self.panel_resolution:
+                    if trajectory[0][0] < len(self.P_points):
                         duplicated_number[trajectory[0][0]] = 1
-                    if trajectory[-1][0] < self.panel_resolution:
+                    if trajectory[-1][0] < len(self.P_points):
                         duplicated_number[trajectory[-1][0]] = 1
             As[h] = sum(duplicated_number)
         return [1. if As[h] >= 3 else 0. for h in range(len(trajectories))]
@@ -940,7 +936,7 @@ class Env:
         self.fake_step = 0
         if self.temp_done:
             # choose P is correct
-            if action < self.panel_resolution:
+            if action < len(self.P_points):
                 self.beginRouting()
                 self.updateStateAndTrajectory(action, 0, action)
                 if rollout:
@@ -979,7 +975,7 @@ class Env:
                 id = self.current_state[i]
                 if id == 0.0:
                     break
-                if id > self.panel_resolution and int(id) == true_action_index + 1 and self.current_state[i + 1] != 0.0:
+                if id > len(self.P_points) and int(id) == true_action_index + 1 and self.current_state[i + 1] != 0.0:
                     self.fake_step = 1
                     next_state = np.append(self.current_state, self.current_string_id)
                     next_state[self.getStateIndex()] = true_action_index + 1
@@ -1115,7 +1111,7 @@ class Env:
                 else:
                     if side == 0:
                         # no valid pass
-                        if true_action_index < self.panel_resolution:
+                        if true_action_index < len(self.P_points):
                             self.fake_step = 1
                             next_state = np.append(self.current_state, self.current_string_id)
                             next_state[self.getStateIndex()] = true_action_index + 1

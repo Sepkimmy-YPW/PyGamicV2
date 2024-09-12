@@ -1025,7 +1025,10 @@ class StlMaker:
                 if self.border_nobias:
                     bias_list.append(bias - border_penalty + 1e-3)
                 else:
-                    bias_list.append(bias)
+                    if bias == self.min_bias:
+                        bias_list.append(1e-3)
+                    else:
+                        bias_list.append(bias)
             else:
                 if side == UP:
                     if self.asym and ele.getType() == MOUNTAIN:
@@ -1358,7 +1361,7 @@ class StlMaker:
         if abs(down_bias - upper_bias) <= 0.0011 * self.min_bias:
             down_strong_modify = False
             upper_strong_modify = False
-            
+
         for ele in another_points_list:
             for point in ele:
                 point[Z] = base_height
