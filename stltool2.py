@@ -1022,13 +1022,20 @@ class StlMaker:
         for i in range(len(unit.getCrease())):
             ele = unit.getCrease()[i]
             if ele.getType() == BORDER:
-                if self.border_nobias:
-                    bias_list.append(bias - border_penalty + 1e-3)
-                else:
-                    if bias == self.min_bias:
-                        bias_list.append(1e-3)
+                if unit_id != -1 and self.unit_bias_list[unit_id][i] != None and \
+                    ((not self.only_two_sides) or (self.only_two_sides and enable_strong_modify)): # condition to modify
+                    if accumulation:
+                        bias_list.append(self.unit_bias_list[unit_id][i] + bias)
                     else:
-                        bias_list.append(bias)
+                        bias_list.append(self.unit_bias_list[unit_id][i])
+                else:
+                    if self.border_nobias:
+                        bias_list.append(bias - border_penalty + 1e-3)
+                    else:
+                        if bias == self.min_bias:
+                            bias_list.append(1e-3)
+                        else:
+                            bias_list.append(bias)
             else:
                 if side == UP:
                     if self.asym and ele.getType() == MOUNTAIN:

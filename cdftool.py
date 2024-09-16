@@ -49,13 +49,14 @@ class Line:
     def getMaxY(self):
         return max(self.start[Y], self.end[Y])
 
-def calculateIntersection(lines):
+def calculateIntersection(lines, enable_barrier=False, safety_dis=40.0):
     intersect = False
     length = len(lines)
     for i in range(length):
-        if lines[i].getData()[END][X] >= 140.0 and lines[i].getData()[END][Y] >= 30.0:
-            intersect = True
-            break
+        if enable_barrier:
+            if lines[i].getData()[END][X] >= 140.0 and lines[i].getData()[END][Y] >= 30.0:
+                intersect = True
+                break
         for j in range(i + 1, length):
             line1 = lines[i]
             line2 = lines[j]
@@ -474,6 +475,19 @@ class CurveFittingHelper:
         max2 = max(p1, p2, mp1, mp2)
 
         return max(max1, max2)
+
+    def zeroMatch(self) -> float:
+        data = np.array(self.origin)
+        length = data.shape[0]
+        score = 0.0
+        for i in range(length - 1):
+            distance = math.sqrt(data[i][X] ** 2 + data[i][Y] ** 2)
+            if distance <= 4.0:
+                score += 1.0 / length
+            else:
+                score += 4.0 / distance / length
+        intersection_bonus = 1.0 - 4. * self.intersection_time / length
+        return score + intersection_bonus
     
     def match(self, mode='regular') -> float:
         data1 = np.array(self.origin)

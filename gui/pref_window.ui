@@ -61,7 +61,7 @@
     </font>
    </property>
    <property name="currentIndex">
-    <number>0</number>
+    <number>2</number>
    </property>
    <widget class="QWidget" name="regular_setting">
     <property name="geometry">
@@ -657,8 +657,8 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>621</width>
-      <height>293</height>
+      <width>100</width>
+      <height>30</height>
      </rect>
     </property>
     <attribute name="label">
@@ -1311,6 +1311,22 @@
        <bool>false</bool>
       </property>
      </widget>
+     <widget class="QRadioButton" name="radioButton_zeromatch">
+      <property name="geometry">
+       <rect>
+        <x>130</x>
+        <y>40</y>
+        <width>131</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Zero Distance</string>
+      </property>
+      <property name="checked">
+       <bool>false</bool>
+      </property>
+     </widget>
     </widget>
     <widget class="QLabel" name="label_discrete_resolution">
      <property name="geometry">
@@ -1585,8 +1601,8 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>621</width>
-      <height>293</height>
+      <width>100</width>
+      <height>30</height>
      </rect>
     </property>
     <attribute name="label">

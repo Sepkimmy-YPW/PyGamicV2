@@ -183,21 +183,31 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             self.radioButton_strict_match.setChecked(False)
             self.radioButton_discretematch.setChecked(False)
             self.radioButton_exomatch.setChecked(False)
+            self.radioButton_zeromatch.setChecked(False)
         elif self.limitation["match_mode"] == 1:
             self.radioButton_bestmatch.setChecked(False)
             self.radioButton_strict_match.setChecked(True)
             self.radioButton_discretematch.setChecked(False)
             self.radioButton_exomatch.setChecked(False)
+            self.radioButton_zeromatch.setChecked(False)
         elif self.limitation["match_mode"] == 2:
             self.radioButton_bestmatch.setChecked(False)
             self.radioButton_strict_match.setChecked(False)
             self.radioButton_discretematch.setChecked(True)
             self.radioButton_exomatch.setChecked(False)
-        else:
+            self.radioButton_zeromatch.setChecked(False)
+        elif self.limitation["match_mode"] == 3:
             self.radioButton_bestmatch.setChecked(False)
             self.radioButton_strict_match.setChecked(False)
             self.radioButton_discretematch.setChecked(False)
             self.radioButton_exomatch.setChecked(True)
+            self.radioButton_zeromatch.setChecked(False)
+        else:
+            self.radioButton_bestmatch.setChecked(False)
+            self.radioButton_strict_match.setChecked(False)
+            self.radioButton_discretematch.setChecked(False)
+            self.radioButton_exomatch.setChecked(False)
+            self.radioButton_zeromatch.setChecked(True)
         #9
         self.spinBox_discrete_resolution.setValue(self.limitation["discrete_resolution"])
         #10
@@ -318,6 +328,8 @@ class PreferencePackWindow(Ui_Settings, QDialog):
             self.limitation["match_mode"] = 2
         elif self.radioButton_exomatch.isChecked():
             self.limitation["match_mode"] = 3
+        elif self.radioButton_zeromatch.isChecked():
+            self.limitation["match_mode"] = 4
         #9
         self.limitation["discrete_resolution"] = self.spinBox_discrete_resolution.value()
         #10

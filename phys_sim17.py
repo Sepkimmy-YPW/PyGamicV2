@@ -46,9 +46,9 @@ class OrigamiSimulator:
 
         self.ITER = 32
 
-        self.BIAS = 0.1
+        self.BIAS = 0.15
 
-        self.print = 1
+        self.print = 0
 
         if not self.fast_simulation_mode:
             self.time = time.strftime('%Y%m%d-%H%M%S', time.localtime())
@@ -121,7 +121,7 @@ class OrigamiSimulator:
         self.gravitational_acc = ti.Vector([0., 0., -9810.]) #全局重力场
         self.string_k = 4. #绳的轴向弹性模量
         self.miu = 0.0
-        self.string_length_decrease_step = 0.08
+        self.string_length_decrease_step = 0.02
         self.max_stretch_length = 1.
         self.bending_k = self.ori_sim.bending_k
         self.bending_param = ti.field(data_type, shape=1)
@@ -149,6 +149,8 @@ class OrigamiSimulator:
         self.ground_miu = 0.6
         self.velocity_barrier = 1e-2
 
+        self.penetration_barrier = 1e-3
+
         self.enable_add_folding_angle = 0. #启用折角增加的仿真模式
         self.enable_tsa_rotate = 0 #启用TSA驱动的仿真模式
 
@@ -171,8 +173,10 @@ class OrigamiSimulator:
 
         #折纸参数
         self.d_hole = 2. #折纸上所打通孔的直径
-        self.h_hole = 1.2 #通孔高度
+        self.h_hole = 1.5 #通孔高度
         self.beta = self.h_hole / math.sqrt(self.h_hole**2 + self.d_hole**2)
+
+        self.string_width = 0.
 
         #折纸初始高度
         self.origami_z_bias = 50.
@@ -237,7 +241,7 @@ class OrigamiSimulator:
         #根据约束数量，确定约束起始点和终止点位置， 若初始点一致，则识别为TSA
         if self.constraint_number == 0 or self.P_number == 0:
             self.constraint_start_point = ti.Vector.field(3, dtype=data_type, shape=1)
-            self.constraint_start_point_candidate_id = ti.field(dtype=int, shape=self.constraint_number)
+            self.constraint_start_point_candidate_id = ti.field(dtype=int, shape=1)
 
             self.constraint_start_point_candidate = ti.Vector.field(3, dtype=data_type, shape=1)
             self.constraint_start_point_candidate_connection = ti.field(dtype=int, shape=1)
@@ -1248,9 +1252,9 @@ class OrigamiSimulator:
         for i in ti.ndrange(len(unit_kps)):
             if unit_kps[i] != -1:
                 kp_len += 1
-        for i in ti.ndrange((1, kp_len - 1)):
-            v1 = self.get_position_with_index(unit_kps[i]) - self.get_position_with_index(unit_kps[0])
-            v2 = self.get_position_with_index(unit_kps[i + 1]) - self.get_position_with_index(unit_kps[0])
+        for i in ti.ndrange((0, kp_len)):
+            v1 = self.get_position_with_index(unit_kps[(i + 1) % kp_len]) - self.get_position_with_index(unit_kps[i])
+            v2 = self.get_position_with_index(unit_kps[(i - 1 + kp_len) % kp_len]) - self.get_position_with_index(unit_kps[i])
             n += v1.cross(v2)
         return tm.normalize(n)
 
@@ -1379,14 +1383,14 @@ class OrigamiSimulator:
         for i in ti.ndrange(self.constraint_number):
             candidate_id = self.constraint_start_point_candidate_id[i]
             unit_id = self.constraint_start_point_candidate_connection[candidate_id]
-            print(unit_id)
+            # print(unit_id)
             if unit_id >= 0:
                 unit_indice = self.unit_indices[unit_id]
                 height = self.constraint_height[candidate_id]
                 center = self.calculateCenterPoint3DWithUnitId(unit_indice)
                 n = self.calculateNormalVectorWithUnitId(unit_indice)
                 self.constraint_start_point[i] = center + n * height
-                print(self.constraint_start_point[i])
+                # print(self.constraint_start_point[i])
             if self.constraint_end_point_existence[i]:
                 candidate_id = self.constraint_end_point_candidate_id[i]
                 unit_id = self.constraint_start_point_candidate_connection[candidate_id]
@@ -1505,19 +1509,19 @@ class OrigamiSimulator:
                 for i in ti.ndrange(self.constraint_number):
                     self.calculateStringLength(i)
                     delta_length = self.constraint_length[i] - self.constraint_initial_length[i] + self.string_length_decrease[i]
-                    print(delta_length)
+                    # print(delta_length)
                     if delta_length > 0:
-                        total_energy += 0.5 * self.string_params[0] * delta_length ** 2
-                        for j in ti.ndrange(self.max_control_length):
-                            if self.unit_control[i][j] != -1:
-                                current_delta_length = self.current_length_per_string[i][j] - self.initial_length_per_string[i][j]
-                                total_energy += 0.5 * self.miu * (current_delta_length) ** 2
+                        total_energy += self.getStringEnergy(delta_length, self.epsilon_string[0])
+                        # for j in ti.ndrange(self.max_control_length):
+                        #     if self.unit_control[i][j] != -1:
+                        #         current_delta_length = self.current_length_per_string[i][j] - self.initial_length_per_string[i][j]
+                        #         total_energy += 0.5 * self.miu * (current_delta_length) ** 2
 
-                            else: #end
-                                if self.constraint_end_point_existence[i]:
-                                    index = self.max_control_length - 1
-                                    current_delta_length = self.current_length_per_string[i][index] - self.initial_length_per_string[i][index]
-                                    total_energy += 0.5 * self.miu * (current_delta_length) ** 2
+                        #     else: #end
+                        #         if self.constraint_end_point_existence[i]:
+                        #             index = self.max_control_length - 1
+                        #             current_delta_length = self.current_length_per_string[i][index] - self.initial_length_per_string[i][index]
+                        #             total_energy += 0.5 * self.miu * (current_delta_length) ** 2
                     
         if self.print:
             print(f"After string calculate energy function: energy: {total_energy}")
@@ -1806,16 +1810,22 @@ class OrigamiSimulator:
 
     @ti.func
     def getStringEnergy(self, delta_length, epsilon):
-        value = 0.5 * delta_length ** 2
+        value = 0.5 * delta_length ** 2 - epsilon * delta_length / 3. + 1. / 12. * epsilon ** 2
+        
         if delta_length < epsilon:
-            value = -delta_length ** 4 / (12. * epsilon ** 2) + delta_length ** 3 / (3. * epsilon) + epsilon * delta_length / 3. - epsilon ** 2 / 12.
+            value = -delta_length ** 4 / (12. * epsilon ** 2) + delta_length ** 3 / (3. * epsilon)
+
+        # print(f"energy: {value}, {delta_length}, {epsilon}")
         return self.string_params[0] * value
 
     @ti.func
     def getStringForce(self, delta_length, epsilon):
-        value = delta_length
+        value = delta_length - epsilon / 3.
+
         if delta_length < epsilon:
-            value = -delta_length ** 3 / (3. * epsilon ** 2) + delta_length ** 2 / epsilon + epsilon / 3.
+            value = -delta_length ** 3 / (3. * epsilon ** 2) + delta_length ** 2 / epsilon
+
+        # print(f"force: {value}, {delta_length}, {epsilon}")
         return self.string_params[0] * value
     
     @ti.func
@@ -1823,6 +1833,8 @@ class OrigamiSimulator:
         value = 1.
         if delta_length < epsilon:
             value = -delta_length ** 2 / (epsilon ** 2) + 2 * delta_length / epsilon
+        
+        # print(f"df: {value}, {delta_length}, {epsilon}")
         return tm.sqrt(self.string_params[0] * value)
     
     @ti.func
@@ -1843,8 +1855,13 @@ class OrigamiSimulator:
                 force = self.getStringForce(delta_length, self.epsilon_string[0])
                 bonus = self.getStringDF(delta_length, self.epsilon_string[0])
 
+                before_force_dir = tm.vec3([0.0, 0.0, 0.0])
+
+                if self.print:
+                    print(force, bonus)
+
                 # current_delta_length = self.current_length_per_string[i][0] - self.initial_length_per_string[i][0]
-                # friction_force = self.miu * current_delta_length
+                friction_force = 0.0
                 
                 start_point = self.constraint_start_point[i]
                 candidate_id = self.constraint_start_point_candidate_id[i]
@@ -1852,7 +1869,8 @@ class OrigamiSimulator:
                 if unit_connection_id >= 0:
                     kp_id = self.unit_indices[unit_connection_id]
                     unit_kp_num = self.calculateKpNumWithUnitId(kp_id)
-                    center = self.calculateCenterPoint3DWithUnitId(kp_id)
+                    next_kp_id = self.unit_indices[self.unit_control[i][0]]
+                    center = self.calculateCenterPoint3DWithUnitId(next_kp_id)
                     if self.intersection_flag[i][0]:
                         center = self.intersection_points[i * self.max_control_length]
                     f_basic = (1. / unit_kp_num * tm.normalize(center - start_point))
@@ -1860,14 +1878,16 @@ class OrigamiSimulator:
                         self.string_force[kp_id[k]] += f_basic * (force + friction_force)
                         self.dldx_force[i, kp_id[k]] += f_basic * bonus
                         # self.dldx_friction_force[i, 0, kp_id[k]] += f_basic * bonus
+                    if self.print:
+                        print(f"{i}, start_unit: {unit_connection_id}, center: {center}, intersection: {self.intersection_flag[i][0]}, f_basic: {f_basic}, kp_id: {kp_id}")
 
                 # print(f"{i}, force: {force}")
 
                 for j in ti.ndrange(self.max_control_length):
                     if self.unit_control[i][j] != -1:
-                        current_delta_length = self.current_length_per_string[i][j] - self.initial_length_per_string[i][j]
-                        friction_force = self.miu * current_delta_length
-                        self.total_energy[0] += 0.5 * self.miu * (current_delta_length) ** 2
+                        # current_delta_length = self.current_length_per_string[i][j] - self.initial_length_per_string[i][j]
+                        # friction_force = self.miu * current_delta_length
+                        # self.total_energy[0] += 0.5 * self.miu * (current_delta_length) ** 2
 
                         kp_id = self.unit_indices[self.unit_control[i][j]]
                         unit_kp_num = self.calculateKpNumWithUnitId(kp_id)
@@ -1878,16 +1898,22 @@ class OrigamiSimulator:
                         # axis_force = tm.vec3([0., 0., 0.])
                             
                         if j == 0: # 1 point
+                            penetration = force_dir.dot(nm) * hole_direction / force_dir.norm(1e-6)
                             self.outer_P[self.exist_grad_number[0]] = start_point
                             self.outer_PI[self.exist_grad_number[0]] = start_point
+                            if penetration >= -self.penetration_barrier:
+                                # print(f"!{j}")
+                                self.outer_PI[self.exist_grad_number[0]] += nm * self.string_width * hole_direction
 
-                            penetration = force_dir.dot(nm) * hole_direction / force_dir.norm(1e-6)
+                            
                             # print(f"{i}, {j}, penetration: {penetration}")
                             if penetration >= -self.beta: #penetration
                                 if penetration > 0:
+                                    if self.print:
+                                        print(f"{i}, {j}, penetration")
                                     t = self.intersection_infos[j + i * self.max_control_length][0]
                                     intersect = self.intersection_points[j + i * self.max_control_length]
-                                    self.outer_PI[self.exist_grad_number[0]] = intersect
+                                    self.outer_PI[self.exist_grad_number[0]] = intersect + nm * self.string_width * hole_direction
                                     
                                     index1 = int(self.intersection_infos[j + i * self.max_control_length][3])
                                     index2 = int(self.intersection_infos[j + i * self.max_control_length][4])
@@ -1915,8 +1941,10 @@ class OrigamiSimulator:
                                
                             self.outer_Q[self.exist_grad_number[0]] = end_point
                             self.outer_QI[self.exist_grad_number[0]] = end_point
-                            
+                            if self.print:
+                                print(f"{i}, PI: {self.outer_PI[self.exist_grad_number[0]]}, intersection: {self.intersection_flag[i][0]}, f_basic: {f_basic}, kp_id: {kp_id}")
                             self.exist_grad_number[0] += 1
+
 
                         else:
                             self.outer_P[self.exist_grad_number[0]] = start_point
@@ -1925,21 +1953,29 @@ class OrigamiSimulator:
                             self.outer_QI[self.exist_grad_number[0] - 1] = end_point
 
                             before_unit_id = self.unit_control[i][j - 1]
+                            before_hole_direction = self.hole_dir[i][j - 1]
                             before_kp_id = self.unit_indices[before_unit_id]
                             before_kp_num = self.calculateKpNumWithUnitId(before_kp_id)
                             before_n = self.calculateNormalVectorWithUnitId(before_kp_id)
 
+                            penetration = before_force_dir.dot(before_n) * before_hole_direction / before_force_dir.norm(1e-6)
+                            if penetration >= -self.penetration_barrier: #penetration
+                                # print(f"!{j}before")
+                                self.outer_QI[self.exist_grad_number[0] - 1] += before_n * self.string_width * hole_direction  
+
                             penetration = force_dir.dot(nm) * hole_direction / force_dir.norm(1e-6)
-                            # print(f"{i}, {j}, penetration: {penetration}")
-                            if penetration >= -self.beta: #penetration
-                                tight_indice = (penetration + self.beta) / self.beta
+                            if penetration >= -self.penetration_barrier:
+                                # print(f"!{j}now")
+                                self.outer_PI[self.exist_grad_number[0]] += nm * self.string_width * hole_direction
 
                             if penetration > 0: #与前一块板有穿透
                                 t = self.intersection_infos[j + i * self.max_control_length][0]
                                 # print(t)
+                                if self.print:
+                                    print(f"{i}, {j}, penetration")
                                 intersect = self.intersection_points[j + i * self.max_control_length]
-                                self.outer_PI[self.exist_grad_number[0]] = intersect
-                                self.outer_QI[self.exist_grad_number[0] - 1] = intersect
+                                self.outer_PI[self.exist_grad_number[0]] = intersect + nm * self.string_width * hole_direction
+                                self.outer_QI[self.exist_grad_number[0] - 1] = intersect + before_n * self.string_width * hole_direction
                                 
                                 index1 = int(self.intersection_infos[j + i * self.max_control_length][3])
                                 index2 = int(self.intersection_infos[j + i * self.max_control_length][4])
@@ -1977,9 +2013,14 @@ class OrigamiSimulator:
                             self.outer_Q[self.exist_grad_number[0]] = end_point
                             self.outer_QI[self.exist_grad_number[0]] = end_point
                         
+                            if self.print:
+                                print(f"{i}, start: {start_point}, BEFORE QI: {self.outer_QI[self.exist_grad_number[0] - 1]}, PI: {self.outer_PI[self.exist_grad_number[0]]}, endpoint: {end_point}, intersection: {self.intersection_flag[i][0]}, f_basic: {f_basic}, before_kp_id: {before_kp_id}, kp_id: {kp_id}")
                             self.exist_grad_number[0] += 1
+                            
                                 
                         start_point = end_point
+                        before_force_dir = force_dir
+                        
 
                     else: #end
                         if self.constraint_end_point_existence[i]:
@@ -2003,34 +2044,35 @@ class OrigamiSimulator:
                             hole_direction = self.hole_dir[i][j - 1]
 
                             penetration = force_dir.dot(before_n) * hole_direction / force_dir.norm(1e-6)
+                            if penetration >= -self.penetration_barrier: #penetration
+                                self.outer_QI[self.exist_grad_number[0] - 1] += before_n * self.string_width * hole_direction  
                             # print(penetration)
-                            if penetration >= -self.beta: #penetration
-                                if penetration > 0:
-                                    intersect = self.intersection_points[index + i * self.max_control_length]
-                                    self.outer_QI[self.exist_grad_number[0] - 1] = intersect
-                                    # print(intersect)
+                            if penetration > 0: #penetration
+                                intersect = self.intersection_points[index + i * self.max_control_length]
+                                self.outer_QI[self.exist_grad_number[0] - 1] = intersect + before_n * self.string_width * hole_direction  
+                                # print(intersect)
 
-                                    t = self.intersection_infos[index + i * self.max_control_length][0]
-                                    # print(t)
-                                    
-                                    index1 = int(self.intersection_infos[index + i * self.max_control_length][3])
-                                    index2 = int(self.intersection_infos[index + i * self.max_control_length][4])
+                                t = self.intersection_infos[index + i * self.max_control_length][0]
+                                # print(t)
+                                
+                                index1 = int(self.intersection_infos[index + i * self.max_control_length][3])
+                                index2 = int(self.intersection_infos[index + i * self.max_control_length][4])
 
-                                    id1 = before_kp_id[index1]
-                                    id2 = before_kp_id[index2]
+                                id1 = before_kp_id[index1]
+                                id2 = before_kp_id[index2]
 
-                                    f_basic = (tm.normalize(start_point - self.outer_QI[self.exist_grad_number[0] - 1]) + tm.normalize(self.constraint_end_point[i] - self.outer_QI[self.exist_grad_number[0] - 1]))
-                                    f1 = (1 - t) * f_basic
-                                    f2 = t * f_basic
-                                    self.string_force[id1] += f1 * (force + friction_force)
-                                    self.string_force[id2] += f2 * (force + friction_force)
+                                f_basic = (tm.normalize(start_point - self.outer_QI[self.exist_grad_number[0] - 1]) + tm.normalize(self.constraint_end_point[i] - self.outer_QI[self.exist_grad_number[0] - 1]))
+                                f1 = (1 - t) * f_basic
+                                f2 = t * f_basic
+                                self.string_force[id1] += f1 * (force + friction_force)
+                                self.string_force[id2] += f2 * (force + friction_force)
 
-                                    self.dldx_force[i, id1] += f1 * bonus
-                                    self.dldx_force[i, id2] += f2 * bonus
-                                    # self.dldx_friction_force[i, index, id1] += f1
-                                    # self.dldx_friction_force[i, index, id2] += f2
-                                    # self.bonus_string_Q[self.exist_grad_number[0] - 1][index1] = (1 - t) * self.string_params[0] / before_kp_num
-                                    # self.bonus_string_Q[self.exist_grad_number[0] - 1][index2] = t * self.string_params[0] / before_kp_num
+                                self.dldx_force[i, id1] += f1 * bonus
+                                self.dldx_force[i, id2] += f2 * bonus
+                                # self.dldx_friction_force[i, index, id1] += f1
+                                # self.dldx_friction_force[i, index, id2] += f2
+                                # self.bonus_string_Q[self.exist_grad_number[0] - 1][index1] = (1 - t) * self.string_params[0] / before_kp_num
+                                # self.bonus_string_Q[self.exist_grad_number[0] - 1][index2] = t * self.string_params[0] / before_kp_num
 
                             self.end_force[0] = force
 
@@ -2429,13 +2471,13 @@ class OrigamiSimulator:
             self.ITER = 6
             self.enable_ground = False
         else:
-            self.n = 24 #仿真的时间间隔
+            self.n = 96 #仿真的时间间隔
             self.dt = 0.1 / self.n #仿真的时间间隔
-            self.substeps = round(1. / 120. / self.dt) #子步长，用于渲染
+            self.substeps = round(1. / 240. / self.dt) #子步长，用于渲染
             self.basic_dt = self.substeps * self.dt
             self.now_t = 0.
             self.lame_k = 1000.
-            self.string_params[0] = 100. #绳的轴向弹性模量
+            self.string_params[0] = 1000. #绳的轴向弹性模量
             self.bending_param[0] = 0.1
             self.facet_bending_param[0] = 0.1
             self.miu = 0.0
@@ -2446,6 +2488,7 @@ class OrigamiSimulator:
             self.ITER = 12
             self.enable_ground = True
 
+        self.image_id = 0
         epsilon_v = self.velocity_barrier * self.dt
         epsilon_string = 1e-1 * self.dt
         # initialize!
@@ -2594,13 +2637,11 @@ class OrigamiSimulator:
 
             if self.sim_mode == self.FOLD_SIM:
                 self.gravitational_acc[Z] = 0.
-                self.enable_ground = False
                 self.tsa_turning_angle = 0.0
                 self.enable_tsa_rotate = 0.0
                 self.folding_angle = 0.0
             else:
                 self.gravitational_acc[Z] = -9810.
-                self.enable_ground = True
                 self.folding_angle = 0.0
                 self.enable_add_folding_angle = 0.0
 
@@ -2615,12 +2656,10 @@ class OrigamiSimulator:
 
             if self.sim_mode == self.TSA_SIM:
                 self.gravitational_acc[Z] = -9810.
-                self.enable_ground = True
                 self.folding_angle = 0.0
                 self.enable_add_folding_angle = 0.0
             else:
                 self.gravitational_acc[Z] = 0.
-                self.enable_ground = False
                 # self.string_length_decrease = 0.0
                 self.enable_tsa_rotate = 0.0
                 self.folding_angle = 0.0
@@ -2722,8 +2761,9 @@ class OrigamiSimulator:
 
     def run(self, force_dir=False, check_force_dir=True):
         self.initializeRunning()
-        image_id = 0
+        self.image_id = 0
         while self.window.running:
+            self.can_rotate = True
             if self.window.get_event(ti.ui.PRESS):
                 self.deal_with_key(self.window.event.key)
 
@@ -2833,6 +2873,9 @@ class OrigamiSimulator:
                             self.F2(self.enable_ground)
                             self.Fm(self.gravitational_acc)
 
+                            # for i in range(self.kp_num):
+                            #     print(self.x[i], self.string_force[i])
+
                             # print(self.initial_length_per_string)
                             # print(self.current_length_per_string)
                             
@@ -2846,31 +2889,32 @@ class OrigamiSimulator:
                             self.fill_b(self.dt)
                             dx = self.sparse_solver.solve(self.b)
                             self.u0.from_numpy(dx)
-                            print("----")
-                            print(self.b)
-                            print(self.u0)
-                            for i in range(3 * self.kp_num):
-                                for j in range(i, 3 * self.kp_num):
-                                    s = abs(A[i, j] - A[j, i])
-                                    if s > 1e-2:
-                                        a = 1
-                                        for ii in range(self.div_indices_num):
-                                            for k in range(9):
-                                                for l in range(k, 9):
-                                                    g = abs(self.K_element[ii][k, l] - self.K_element[ii][l, k])
-                                                    if g > 1e-2:
-                                                        print(self.K_element[ii])
+                            # # print("----")
+                            # # print(self.b)
+                            # # print(self.u0)
+                            # for i in range(3 * self.kp_num):
+                            #     for j in range(i, 3 * self.kp_num):
+                            #         s = abs(A[i, j] - A[j, i])
+                            #         if s > 1e-2:
+                            #             a = 1
+                            #             for ii in range(self.div_indices_num):
+                            #                 for k in range(9):
+                            #                     for l in range(k, 9):
+                            #                         g = abs(self.K_element[ii][k, l] - self.K_element[ii][l, k])
+                            #                         if g > 1e-2:
+                            #                             print(self.K_element[ii])
 
                             dx_norm = np.linalg.norm(dx)
 
                             self.line_search(self.dt, self.total_energy[0], dx_norm, self.sim_mode, self.folding_angle, self.gravitational_acc, facet_k, self.enable_ground)
                             # print(self.x)
 
+                            # print(self.unit_center[0])
                             if dx_norm < 1e-3:
                                 break
                         
-                        if k == self.ITER - 1:
-                            a = 1
+                        # if k == self.ITER - 1:
+                        #     a = 1
 
                         dt = self.step_xv(self.dt, self.sim_mode, self.folding_angle, self.gravitational_acc, facet_k, backup_energy)
                         self.backupStringLength()
@@ -3023,12 +3067,13 @@ class OrigamiSimulator:
             
             self.canvas.scene(self.scene)
             if not self.fast_simulation_mode:
-                self.window.save_image(f'./physResult/{self.origami_name}-{self.time}/' + str(image_id).zfill(8) + '.png')
-                image_id += 1
+                if (self.current_t * 60.0 - float(self.image_id) + 1.) >= 1.:
+                    self.window.save_image(f'./physResult/{self.origami_name}-{self.time}/' + str(self.image_id).zfill(8) + '.png')
+                    self.image_id += 1
             self.window.show()
 
 if __name__ == "__main__":
-    ori_name = "phys_sim"
+    ori_name = "mountain15"
     ori = OrigamiSimulator(origami_name=ori_name, fast_simulation=True)
     ori.start(ori_name, 4, ori.FOLD_SIM)
     ori.run(False, False)

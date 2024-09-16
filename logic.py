@@ -682,7 +682,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             self.updateMessage("Failed to calculate sequence")
 
     def cdfCurveFitting(self):
-        if self.limitation["match_mode"] != 3:
+        if self.limitation["match_mode"] < 3:
             if len(self.x_list) == 0:
                 self.updateMessage("No curve has been imported, please import a curve file first...")
                 return
@@ -703,7 +703,7 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
             return
         
         self.enable_cdf_curve_fitting = True
-        if self.limitation["match_mode"] != 3:
+        if self.limitation["match_mode"] < 3:
             self.cdf_curve_fitting_thread = CdfCurveFittingThread(
                 curve_name  =self.curve_name,
                 pref_pack   =self.limitation,
@@ -711,9 +711,17 @@ class Mainwindow(Ui_MainWindow, QMainWindow):
                 curve_y     =self.y_list,
                 curve_dir   =self.dir_list if self.limitation["direction_enable"] else None
             )
-        else:
+        elif self.limitation["match_mode"] == 3:
             self.cdf_curve_fitting_thread = CdfCurveFittingThread(
                 curve_name  ="exoskeleton",
+                pref_pack   =self.limitation,
+                curve_x     =None,
+                curve_y     =None,
+                curve_dir   =None
+            )
+        elif self.limitation["match_mode"] == 4:
+            self.cdf_curve_fitting_thread = CdfCurveFittingThread(
+                curve_name  ="zerodistance",
                 pref_pack   =self.limitation,
                 curve_x     =None,
                 curve_y     =None,
@@ -3937,6 +3945,7 @@ class CdfCurveFittingThread(QThread):
         self.STRICT_MATCH = 1
         self.DISCRETE_MATCH = 2
         self.EXO_MATCH = 3
+        self.ZERO_MATCH = 4
     
     def run(self):
         step_min = self.pref_pack["row_number"][0]
@@ -3949,7 +3958,8 @@ class CdfCurveFittingThread(QThread):
             cfh.setGoalList([[self.x[i], self.y[i]] for i in range(len(self.x))])
         
         else:
-            cfh.setExoGoal(self.exo_X, self.exo_Y, self.exo_theta * math.pi / 180.0)
+            if self.match_mode == self.EXO_MATCH:
+                cfh.setExoGoal(self.exo_X, self.exo_Y, self.exo_theta * math.pi / 180.0)
 
         if self.direction_enable:
             cfh.setDirectionGoalList(self.dir)
@@ -4047,6 +4057,13 @@ class CdfCurveFittingThread(QThread):
                                 cfh.setDirectionOriginList(all_ef_dir)
 
                                 p = cfh.exoMatch(intersect1, intersect2)
+                                reward_list.append(p)
+
+                            elif (self.match_mode == self.ZERO_MATCH):
+                                part_ef, _ = tm.getPartEndEffector(45)
+                                cfh.setOriginList(part_ef)
+                                cfh.setIntersectionTime(tm.self_intersection_number)
+                                p = cfh.zeroMatch()
                                 reward_list.append(p)
 
                             else:
@@ -4304,7 +4321,7 @@ class StlOutputThread(QThread):
                             f.write(self.stl_writer.s)
                     else:
                         self.stl_writer.outputAllStl(soft_file_path)
-                    hard_file_path = file_path.split('.')[0] + '_H.stl'
+                    hard_file_path = file_path.split('.')[0] + '.stl'
                     if show_process:
                         for unit_id in range(unit_size):
                             self.stl_writer.calculateTriPlaneForUnit(unit_id, inner=False)

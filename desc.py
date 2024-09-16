@@ -223,9 +223,9 @@ class DxfDirectGrabber:
                     self.kps.append(end_point)
 
                 self.lines.append([start_point, end_point])
-                if layer == 'Mountain' or color == 1:
+                if layer.upper() == 'MOUNTAIN' or color == 1:
                     self.lines_type.append(MOUNTAIN)
-                elif layer == 'Valley' or color == 5:
+                elif layer.upper() == 'VALLEY' or color == 5:
                     self.lines_type.append(VALLEY)
                 else:
                     self.lines_type.append(BORDER)
